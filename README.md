@@ -8,7 +8,7 @@
 
 ## 기술 스택
 
-Next.js (App Router) · Neon DB (PostgreSQL) · Drizzle ORM · Vercel · Auth.js · 네이버 지역 검색 API · NAVER Maps API
+Next.js (App Router) · Neon DB (PostgreSQL) · Drizzle ORM · Vercel · Auth.js · 카카오 로컬 API · 카카오맵 API
 
 ## 시작하기
 

@@ -59,7 +59,7 @@ export const pots = pgTable(
       .notNull()
       .references(() => zones.code),
 
-    // 가게 (네이버 지역 검색 API 결과)
+    // 가게 (카카오 로컬 API 결과)
     storeName: text('store_name').notNull(),
     storeAddress: text('store_address'),
     storeLat: numeric('store_lat', { precision: 10, scale: 7 }),
@@ -73,7 +73,7 @@ export const pots = pgTable(
     deadlineAt: timestamp('deadline_at', { withTimezone: true }).notNull(), // 모집 마감 시각
     pickupAt: timestamp('pickup_at', { withTimezone: true }), // 주문/수령 예정 시각
 
-    // 수령 장소 (네이버 지역 검색 API·NAVER Maps API 결과 + 직접 설명)
+    // 수령 장소 (카카오 로컬 API·카카오맵 API 결과 + 직접 설명)
     pickupName: text('pickup_name').notNull(),
     pickupAddress: text('pickup_address'),
     pickupLat: numeric('pickup_lat', { precision: 10, scale: 7 }),

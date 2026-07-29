@@ -18,8 +18,10 @@
 - [x] GitHub 원격 저장소 연결 및 push (`https://github.com/yellowm-ad/muk-mate`)
 - [x] Vercel CLI 설치·로그인, `vercel link`로 프로젝트 연결 완료 (프로젝트 `muk-mate`, GitHub 저장소 자동 연동됨)
 - [x] Neon 프로젝트 생성, **pooled connection string** 확보 (PRD 10-3②) — Vercel Marketplace 연동(`vercel integration add neon`)으로 생성, `DATABASE_URL`이 pooled(`-pooler` 호스트)로 자동 등록됨. `DATABASE_URL_UNPOOLED`도 별도 제공되나 앱에서는 사용하지 않음
-- [x] 네이버 개발자센터에서 애플리케이션 등록 — 지역 검색 API Client ID/Secret 발급 완료. **NAVER Maps API(NCP `console.ncloud.com`) 키는 아직 미발급** — 장소 검색은 되지만 지도 표시가 필요한 시점에 별도로 받아야 함
-- [x] 환경변수 설정: `NEXTAUTH_SECRET`(자동 생성), `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` — 로컬 `.env.local` + Vercel Production/Preview/Development 전부 등록 완료 (`DATABASE_URL`은 Neon 연동으로 이미 등록됨)
+- [x] ~~네이버 개발자센터/NCP 애플리케이션 등록~~ — **(v2.2) 카카오로 전환되어 폐기.** 네이버 지역 검색 API 키는 발급받아 등록했었으나 제거함 (아래 항목으로 대체)
+- [ ] [카카오 개발자 콘솔](https://developers.kakao.com/console/app)에서 애플리케이션 등록 — **REST API 키**(로컬 장소 검색용, 서버 전용), **JavaScript 키**(카카오맵 SDK용, 클라이언트 노출 가능하나 플랫폼 설정에 도메인 등록 필요) 발급
+- [x] 환경변수 설정: `NEXTAUTH_SECRET`(자동 생성) — 로컬 `.env.local` + Vercel Production/Preview/Development 전부 등록 완료 (`DATABASE_URL`은 Neon 연동으로 이미 등록됨)
+- [ ] 환경변수 설정: `KAKAO_REST_API_KEY`, `NEXT_PUBLIC_KAKAO_JS_KEY` — 카카오 키 발급 후 로컬 `.env.local` + Vercel 3개 환경에 등록 (→ `/mukmate:vercel-env`)
 - [x] Vercel 첫 프로덕션 배포 완료 — https://muk-mate-mu.vercel.app (200 OK 확인, 아직 mock 데이터 프론트엔드)
 
 ## Phase 1 — 데이터베이스 스키마 (→ `db-schema` 에이전트, `db-migrate` 스킬)
@@ -43,14 +45,14 @@
 - [ ] `app/(auth)/login`, `signup`, `onboarding` 화면을 실제 API로 연결 (mock 제거)
 - [ ] 비로그인 사용자 차단 미들웨어/가드 적용 (AUTH-04)
 
-## Phase 3 — 공동주문 코어 (→ `api-backend` + `naver-places` + `db-schema` 에이전트)
+## Phase 3 — 공동주문 코어 (→ `api-backend` + `kakao-places` + `db-schema` 에이전트)
 
 - [ ] `GET /api/pots` (zone/status 필터), `POST /api/pots` (작성) — ORDER-01, ORDER-02
 - [ ] `GET /api/pots/:id` (상세)
 - [ ] `PATCH /api/pots/:id` — **모집자만** 수정/상태 변경 (ORDER-05, ORDER-08, → `permission-matrix` 스킬)
 - [ ] 마감 시각 조회 시점 판정 로직 적용 (PRD 10-3③ `CASE WHEN` 쿼리, ORDER-11)
-- [ ] `GET /api/places/search` 네이버 프록시 구현 (→ `naver-proxy` 스킬, ORDER-09)
-- [ ] 장소·주소 검색 모달(화면 6)을 프록시에 연결
+- [ ] `GET /api/places/search` 카카오 로컬 API 프록시 구현 (→ `kakao-proxy` 스킬, ORDER-09) — `KAKAO_REST_API_KEY` 발급 선행 필요 (Phase 0)
+- [ ] 장소·주소 검색 모달(화면 6)을 프록시에 연결, 지도 표시 시 카카오맵 SDK를 `NEXT_PUBLIC_KAKAO_JS_KEY`로 클라이언트 로드
 - [ ] `app/(main)/pots`, `pots/[id]` 화면을 mock에서 실제 API로 교체 (`lib/api.ts` 내부만 교체, 시그니처 유지)
 
 ## Phase 4 — 참여 신청/승인 (→ `api-backend` 에이전트)
@@ -86,7 +88,7 @@
 - [ ] Vercel 프로덕션 배포 (→ `/mukmate:deploy`)
 - [ ] `/mvp-checklist`로 PRD 13-1/13-2 항목 전수 점검
 - [ ] 서로 다른 계정·기기 2대로 PRD 13-3 통합 테스트 (동시 접속, 실시간 갱신 체감 확인)
-- [ ] 네이버 API Client Secret이 브라우저 네트워크 탭에 노출되지 않는지 확인 (→ `/mukmate:vercel-check`)
+- [ ] 카카오 **REST API 키**가 브라우저 네트워크 탭에 노출되지 않는지 확인 (→ `/mukmate:vercel-check`) — `NEXT_PUBLIC_KAKAO_JS_KEY`는 노출되는 게 정상이므로 대상 아님
 
 ---
 
