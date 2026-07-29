@@ -119,9 +119,9 @@ pnpm lint
 ## 현재 상태
 
 - 프론트엔드: 화면 스캐폴딩(로그인/회원가입/온보딩, 공동주문 목록·상세, 채팅·마이 placeholder)까지 되어 있고 `lib/api.ts`가 `mock-data.ts`를 반환하는 프로토타입 단계.
-- DB: `lib/db/schema.ts`·마이그레이션 코드는 PRD 11-2 기준으로 완성. **Neon 프로젝트가 아직 없어 실제 DB 적용·시드는 미실행** (DEV_PLAN Phase 1 일부 보류).
+- DB: **Neon 프로젝트 생성 완료(Vercel Marketplace 연동), 마이그레이션 적용 + zones/커뮤니티 채팅방 시드까지 완료.** `DATABASE_URL`은 Vercel이 자동 관리하며 로컬은 `vercel env pull`로 동기화한다 (직접 편집하지 않음).
 - 인증/네이버 API 프록시/채팅 폴링 API: 아직 구현 전 (DEV_PLAN Phase 2~5).
 - git: 저장소 초기화 완료, GitHub(`https://github.com/yellowm-ad/muk-mate`)에 push 완료.
-- Vercel: CLI 로그인 완료, `vercel link`로 프로젝트 연결 완료(`muk-mate`, GitHub 저장소 자동 연동됨). **아직 프로덕션 배포는 하지 않음**, 환경변수(`DATABASE_URL`, `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID/SECRET`)도 미설정.
+- Vercel: CLI 로그인 완료, `vercel link`로 프로젝트 연결 완료(`muk-mate`, GitHub 저장소 자동 연동됨). **아직 프로덕션 배포는 하지 않음.** 남은 환경변수는 `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID/SECRET`.
 
-다음 착수 지점: Neon 프로젝트 생성(Vercel Marketplace의 Neon 연동으로 만들면 `DATABASE_URL`이 자동으로 Vercel 환경변수에 pooled 상태로 등록됨 — `vercel:vercel-storage` 스킬 참고) → 마이그레이션 적용 → 첫 배포.
+다음 착수 지점: 네이버 API 키 발급 + 환경변수 등록 → Vercel 첫 배포 → Phase 2(인증) 착수.

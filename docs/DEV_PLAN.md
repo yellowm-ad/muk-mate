@@ -17,9 +17,9 @@
 - [x] git 저장소 초기화 및 첫 커밋 (`git init`, `.gitignore`에 `.env.local` 포함 확인)
 - [x] GitHub 원격 저장소 연결 및 push (`https://github.com/yellowm-ad/muk-mate`)
 - [x] Vercel CLI 설치·로그인, `vercel link`로 프로젝트 연결 완료 (프로젝트 `muk-mate`, GitHub 저장소 자동 연동됨)
-- [ ] Neon 프로젝트 생성, **pooled connection string** 확보 (PRD 10-3②) — Vercel 대시보드/CLI의 Marketplace 연동(Neon)으로 만들면 `DATABASE_URL`이 자동으로 pooled 상태로 Vercel 환경변수에 등록됨 (→ `vercel:vercel-storage` 스킬)
+- [x] Neon 프로젝트 생성, **pooled connection string** 확보 (PRD 10-3②) — Vercel Marketplace 연동(`vercel integration add neon`)으로 생성, `DATABASE_URL`이 pooled(`-pooler` 호스트)로 자동 등록됨. `DATABASE_URL_UNPOOLED`도 별도 제공되나 앱에서는 사용하지 않음
 - [ ] 네이버 개발자센터에서 애플리케이션 등록 — 지역 검색 API, Maps API Client ID/Secret 발급
-- [ ] 환경변수 설정: `DATABASE_URL`(pooled), `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` — 로컬 `.env.local` + Vercel Production/Preview/Development 각각 (→ `/mukmate:vercel-env`)
+- [ ] 환경변수 설정: `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` — 로컬 `.env.local` + Vercel Production/Preview/Development 각각 (`DATABASE_URL`은 Neon 연동으로 이미 등록됨, → `/mukmate:vercel-env`)
 - [ ] 빈 상태로라도 Vercel 첫 배포 실행 — 파이프라인을 미리 뚫어둔다 (PRD 15장 Day1 경고, → `/mukmate:deploy`)
 
 ## Phase 1 — 데이터베이스 스키마 (→ `db-schema` 에이전트, `db-migrate` 스킬)
@@ -28,9 +28,9 @@
 - [x] PRD 11-2 기준 스키마 작성: `zones`, `users`, `pots`, `participations`, `chat_rooms`, `messages` (enum 5종 포함) — `lib/db/schema.ts`
 - [x] 인덱스: `idx_pots_zone_status`, `idx_participations_user`, `idx_messages_room`
 - [x] 마이그레이션 파일 생성 (`drizzle-kit generate` 완료, `lib/db/migrations/0000_lush_giant_girl.sql`, PRD 11-2와 대조 검증 완료)
-- [ ] **개발 DB에 마이그레이션 적용** — DATABASE_URL(Neon pooled connection string) 없어서 보류. Neon 프로젝트 생성 후 `pnpm db:push`로 적용
-- [ ] `zones` 시드 데이터 삽입 — 코드 작성 완료(`lib/db/seed.ts`), DB 연결 후 `pnpm db:seed`로 실행 예정 (PRD 17-1)
-- [ ] `chat_rooms`에 커뮤니티 고정방 2개 시드 — 코드 작성 완료, DB 연결 후 실행 예정 (PRD 17-2)
+- [x] **개발 DB에 마이그레이션 적용** — `drizzle-kit migrate`로 실제 Neon 개발 DB에 적용 완료 (`drizzle-kit push`는 이 환경에서 TTY 확인 프롬프트 때문에 비대화형 실행이 안 되어 `migrate`로 대체)
+- [x] `zones` 시드 데이터 삽입 — `pnpm db:seed` 실행 완료, DB 조회로 4개 권역 확인
+- [x] `chat_rooms`에 커뮤니티 고정방 2개 시드 — 실행 완료, DB 조회로 확인
 
 ## Phase 2 — 인증 (→ `api-backend` 에이전트, `auth-setup` 스킬)
 
