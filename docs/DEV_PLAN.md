@@ -14,7 +14,7 @@
 
 ## Phase 0 — 프로젝트 기반 (선행 조건)
 
-- [ ] git 저장소 초기화 및 첫 커밋 (`git init`, `.gitignore`에 `.env.local` 포함 확인)
+- [x] git 저장소 초기화 및 첫 커밋 (`git init`, `.gitignore`에 `.env.local` 포함 확인)
 - [ ] Neon 프로젝트 생성, **pooled connection string** 확보 (PRD 10-3②)
 - [ ] 네이버 개발자센터에서 애플리케이션 등록 — 지역 검색 API, Maps API Client ID/Secret 발급
 - [ ] `vercel link`로 Vercel 프로젝트 연결 (→ `vercel-deploy` 에이전트 / `/deploy`)
@@ -23,12 +23,13 @@
 
 ## Phase 1 — 데이터베이스 스키마 (→ `db-schema` 에이전트, `db-migrate` 스킬)
 
-- [ ] Drizzle 설정 (`drizzle.config.ts`, pooled 드라이버 연결)
-- [ ] PRD 11-2 기준 스키마 작성: `zones`, `users`, `pots`, `participations`, `chat_rooms`, `messages` (enum 5종 포함)
-- [ ] 인덱스: `idx_pots_zone_status`, `idx_participations_user`, `idx_messages_room`
-- [ ] 마이그레이션 생성 및 개발 DB 적용
-- [ ] `zones` 시드 데이터 삽입 — 구정문/신정문/기숙사/사대부고 4개 권역 (PRD 17-1 제안안)
-- [ ] `chat_rooms`에 커뮤니티 고정방 2개 시드 — "오늘 뭐 먹지" / "같이 먹어요" (PRD 17-2 제안안)
+- [x] Drizzle 설정 (`drizzle.config.ts`, pooled 드라이버 연결 — `@neondatabase/serverless` + `drizzle-orm/neon-http`)
+- [x] PRD 11-2 기준 스키마 작성: `zones`, `users`, `pots`, `participations`, `chat_rooms`, `messages` (enum 5종 포함) — `lib/db/schema.ts`
+- [x] 인덱스: `idx_pots_zone_status`, `idx_participations_user`, `idx_messages_room`
+- [x] 마이그레이션 파일 생성 (`drizzle-kit generate` 완료, `lib/db/migrations/0000_lush_giant_girl.sql`, PRD 11-2와 대조 검증 완료)
+- [ ] **개발 DB에 마이그레이션 적용** — DATABASE_URL(Neon pooled connection string) 없어서 보류. Neon 프로젝트 생성 후 `pnpm db:push`로 적용
+- [ ] `zones` 시드 데이터 삽입 — 코드 작성 완료(`lib/db/seed.ts`), DB 연결 후 `pnpm db:seed`로 실행 예정 (PRD 17-1)
+- [ ] `chat_rooms`에 커뮤니티 고정방 2개 시드 — 코드 작성 완료, DB 연결 후 실행 예정 (PRD 17-2)
 
 ## Phase 2 — 인증 (→ `api-backend` 에이전트, `auth-setup` 스킬)
 
