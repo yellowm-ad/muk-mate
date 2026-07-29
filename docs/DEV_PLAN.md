@@ -18,9 +18,9 @@
 - [x] GitHub 원격 저장소 연결 및 push (`https://github.com/yellowm-ad/muk-mate`)
 - [x] Vercel CLI 설치·로그인, `vercel link`로 프로젝트 연결 완료 (프로젝트 `muk-mate`, GitHub 저장소 자동 연동됨)
 - [x] Neon 프로젝트 생성, **pooled connection string** 확보 (PRD 10-3②) — Vercel Marketplace 연동(`vercel integration add neon`)으로 생성, `DATABASE_URL`이 pooled(`-pooler` 호스트)로 자동 등록됨. `DATABASE_URL_UNPOOLED`도 별도 제공되나 앱에서는 사용하지 않음
-- [ ] 네이버 개발자센터에서 애플리케이션 등록 — 지역 검색 API, Maps API Client ID/Secret 발급
-- [ ] 환경변수 설정: `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` — 로컬 `.env.local` + Vercel Production/Preview/Development 각각 (`DATABASE_URL`은 Neon 연동으로 이미 등록됨, → `/mukmate:vercel-env`)
-- [ ] 빈 상태로라도 Vercel 첫 배포 실행 — 파이프라인을 미리 뚫어둔다 (PRD 15장 Day1 경고, → `/mukmate:deploy`)
+- [x] 네이버 개발자센터에서 애플리케이션 등록 — 지역 검색 API Client ID/Secret 발급 완료. **NAVER Maps API(NCP `console.ncloud.com`) 키는 아직 미발급** — 장소 검색은 되지만 지도 표시가 필요한 시점에 별도로 받아야 함
+- [x] 환경변수 설정: `NEXTAUTH_SECRET`(자동 생성), `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` — 로컬 `.env.local` + Vercel Production/Preview/Development 전부 등록 완료 (`DATABASE_URL`은 Neon 연동으로 이미 등록됨)
+- [x] Vercel 첫 프로덕션 배포 완료 — https://muk-mate-mu.vercel.app (200 OK 확인, 아직 mock 데이터 프론트엔드)
 
 ## Phase 1 — 데이터베이스 스키마 (→ `db-schema` 에이전트, `db-migrate` 스킬)
 

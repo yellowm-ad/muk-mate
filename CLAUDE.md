@@ -1,6 +1,6 @@
 # 먹메이트 (MukMate)
 
-전북대 덕진구 생활권 학생들을 위한 공동주문 매칭 모바일 웹 서비스. 최소주문금액·배달비 부담을 가까운 학생끼리 나눌 수 있게 모집·참여·채팅을 연결한다. **전체 요구사항의 단일 소스는 `docs/PRD.md`(v2.0)다.** 기능 작업 전 관련 장을 먼저 확인한다.
+전북대 덕진구 생활권 학생들을 위한 공동주문 매칭 모바일 웹 서비스. 최소주문금액·배달비 부담을 가까운 학생끼리 나눌 수 있게 모집·참여·채팅을 연결한다. **전체 요구사항의 단일 소스는 `docs/PRD.md`(v2.1)다.** 기능 작업 전 관련 장을 먼저 확인한다.
 
 ## 개발 계획 (`docs/DEV_PLAN.md`)
 
@@ -13,8 +13,8 @@
 ## 기술 스택 (PRD 10장)
 
 - **웹 프레임워크**: Next.js 16 (App Router), React 19, TypeScript
-- **DB**: Neon DB (PostgreSQL) — 반드시 pooled connection string 또는 `@neondatabase/serverless` 사용
-- **ORM**: Drizzle ORM (권장)
+- **DB**: Neon DB (PostgreSQL), Vercel Marketplace 연동으로 생성 — `DATABASE_URL`은 pooled, Vercel이 자동 관리
+- **ORM**: Drizzle ORM (구현 완료)
 - **배포**: Vercel
 - **장소/지도**: 네이버 지역 검색 API · NAVER Maps API (서버 프록시 경유 필수)
 - **인증**: Auth.js(NextAuth) Credentials + bcrypt
@@ -37,7 +37,7 @@ lib/
   api.ts         — 데이터 접근 레이어. 컴포넌트는 이 함수만 호출하고 mock-data를 직접 import하지 않는다
   mock-data.ts   — 현재 lib/api.ts가 반환하는 목데이터 (실제 DB 연동 시 대체 대상)
   format.ts, constants.ts, utils.ts
-docs/PRD.md      — 요구사항 원문 (v2.0)
+docs/PRD.md      — 요구사항 원문 (v2.1)
 ```
 
 **데이터 연동 원칙**: `lib/api.ts`의 각 함수는 `TODO: replace with real API call` 주석과 함께 목데이터를 반환 중이다. 실제 연동 시 **함수 시그니처는 유지한 채 내부 구현만 실제 `fetch`로 교체**한다 — 컴포넌트 쪽 코드는 건드릴 필요가 없어야 한다.
@@ -120,8 +120,8 @@ pnpm lint
 
 - 프론트엔드: 화면 스캐폴딩(로그인/회원가입/온보딩, 공동주문 목록·상세, 채팅·마이 placeholder)까지 되어 있고 `lib/api.ts`가 `mock-data.ts`를 반환하는 프로토타입 단계.
 - DB: **Neon 프로젝트 생성 완료(Vercel Marketplace 연동), 마이그레이션 적용 + zones/커뮤니티 채팅방 시드까지 완료.** `DATABASE_URL`은 Vercel이 자동 관리하며 로컬은 `vercel env pull`로 동기화한다 (직접 편집하지 않음).
-- 인증/네이버 API 프록시/채팅 폴링 API: 아직 구현 전 (DEV_PLAN Phase 2~5).
+- 인증/네이버 API 프록시/채팅 폴링 API: 아직 구현 전 (DEV_PLAN Phase 2~5) — 단, 필요한 환경변수(`NAVER_CLIENT_ID/SECRET`, `NEXTAUTH_SECRET`)는 이미 등록되어 있어 코드 작성만 남았다.
 - git: 저장소 초기화 완료, GitHub(`https://github.com/yellowm-ad/muk-mate`)에 push 완료.
-- Vercel: CLI 로그인 완료, `vercel link`로 프로젝트 연결 완료(`muk-mate`, GitHub 저장소 자동 연동됨). **아직 프로덕션 배포는 하지 않음.** 남은 환경변수는 `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID/SECRET`.
+- Vercel: CLI 로그인, `vercel link`(`muk-mate`, GitHub 자동 연동), 전체 환경변수(DB/네이버/NextAuth) 등록, **첫 프로덕션 배포까지 완료** — https://muk-mate-mu.vercel.app (아직 mock 데이터 프론트엔드).
 
-다음 착수 지점: 네이버 API 키 발급 + 환경변수 등록 → Vercel 첫 배포 → Phase 2(인증) 착수.
+다음 착수 지점: Phase 2(인증) — Auth.js Credentials + bcrypt 구현.
