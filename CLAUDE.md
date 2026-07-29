@@ -20,7 +20,7 @@
 - **인증**: Auth.js(NextAuth) Credentials + bcrypt
 - **스타일**: Tailwind CSS v4 + shadcn/ui (주황/화이트 톤)
 - **채팅 갱신**: WebSocket 미사용, 폴링(2~3초 간격) 방식만 사용
-- **패키지 매니저**: pnpm (`package.json`의 `pnpm.overrides` 참고)
+- **패키지 매니저**: pnpm (설정은 `pnpm-workspace.yaml` — `overrides`, `allowBuilds` 참고. `package.json`의 `pnpm` 필드는 최신 pnpm에서 더 이상 읽지 않아 제거됨)
 
 ## 프로젝트 구조
 
@@ -102,15 +102,26 @@ pnpm lint
 - `naver-places` — 네이버 지역 검색·Maps API 서버 프록시, 거리 계산 (`naver-proxy`, `permission-matrix`)
 - `chat-polling` — 주문 채팅·커뮤니티 채팅 폴링 로직 (`chat-polling-pattern`, `permission-matrix`)
 - `mobile-ui` — Tailwind/shadcn 기반 13개 화면 UI 구현 (`screen-tone`)
-- `vercel-deploy` — Vercel 배포, 환경변수, 빌드/런타임 트러블슈팅 (vercel 플러그인의 `/deploy`·`/vercel-env`·`/vercel-check` 활용)
+- `vercel-deploy` — Vercel 배포, 환경변수, 빌드/런타임 트러블슈팅 (`mukmate` 플러그인의 `/mukmate:deploy`·`/mukmate:vercel-env`·`/mukmate:vercel-check` + 공식 `vercel` 플러그인 활용)
 
 ## 진단용 스킬
 
 - `/dev-plan` — `docs/DEV_PLAN.md` 체크리스트를 코드 상태와 동기화 (완료 항목 체크, 의존성 위반 경고)
 - `/mvp-checklist` — PRD 13장 완료 기준을 코드/DB 실제 상태와 대조해 점검
 - `/sprint-day [N]` — PRD 15장 Day N 목표 대비 진행 상황 점검, 일정 초과 시 축소 우선순위 안내
-- `/deploy`, `/vercel-env`, `/vercel-check` — Vercel 플러그인(`vercel@skills-dir`) 배포/환경변수/상태 점검
+- `/mukmate:deploy`, `/mukmate:vercel-env`, `/mukmate:vercel-check` — 먹메이트 전용 배포/환경변수/상태 점검 (`mukmate@skills-dir` 플러그인, `.claude/skills/mukmate/`)
+
+## Vercel 플러그인 (2종 — 이름 충돌 없이 공존)
+
+- **`vercel@claude-plugins-official`** (user scope, 이미 설치됨) — 범용 Vercel/Next.js 전문 지식. `/vercel:deploy`, `/vercel:env`, `/vercel:status`, `/vercel:bootstrap`, `/vercel:nextjs`, `/vercel:shadcn`, `/vercel:vercel-storage`(Neon/Upstash 마켓플레이스 연동 포함) 등 다수. 일반적인 Vercel 작업은 이쪽을 우선 활용한다.
+- **`mukmate@skills-dir`** (project scope, `.claude/skills/mukmate/`) — 먹메이트 PRD 기준 체크리스트가 들어간 프로젝트 전용 배포 스킬. 두 플러그인 모두 이름이 `vercel`이면 나중 등록된 쪽이 로드되지 않으므로, 이 플러그인은 이름을 `mukmate`로 지정해 충돌을 피했다.
 
 ## 현재 상태
 
-프론트엔드는 화면 스캐폴딩(로그인/회원가입/온보딩, 공동주문 목록·상세, 채팅·마이 placeholder)까지 되어 있고 `lib/api.ts`가 `mock-data.ts`를 반환하는 프로토타입 단계다. DB 스키마·마이그레이션, Auth.js 인증, 네이버 API 프록시, 채팅 폴링 API는 아직 구현 전이다. git 저장소는 아직 초기화되어 있지 않다. 다음 착수 지점은 PRD 15장 Day 1: Drizzle 스키마 마이그레이션 → Vercel 첫 배포 연결 → 회원가입/로그인.
+- 프론트엔드: 화면 스캐폴딩(로그인/회원가입/온보딩, 공동주문 목록·상세, 채팅·마이 placeholder)까지 되어 있고 `lib/api.ts`가 `mock-data.ts`를 반환하는 프로토타입 단계.
+- DB: `lib/db/schema.ts`·마이그레이션 코드는 PRD 11-2 기준으로 완성. **Neon 프로젝트가 아직 없어 실제 DB 적용·시드는 미실행** (DEV_PLAN Phase 1 일부 보류).
+- 인증/네이버 API 프록시/채팅 폴링 API: 아직 구현 전 (DEV_PLAN Phase 2~5).
+- git: 저장소 초기화 완료, GitHub(`https://github.com/yellowm-ad/muk-mate`)에 push 완료.
+- Vercel: CLI 로그인 완료, `vercel link`로 프로젝트 연결 완료(`muk-mate`, GitHub 저장소 자동 연동됨). **아직 프로덕션 배포는 하지 않음**, 환경변수(`DATABASE_URL`, `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID/SECRET`)도 미설정.
+
+다음 착수 지점: Neon 프로젝트 생성(Vercel Marketplace의 Neon 연동으로 만들면 `DATABASE_URL`이 자동으로 Vercel 환경변수에 pooled 상태로 등록됨 — `vercel:vercel-storage` 스킬 참고) → 마이그레이션 적용 → 첫 배포.

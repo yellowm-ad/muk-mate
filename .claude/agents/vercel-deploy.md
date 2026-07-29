@@ -16,7 +16,12 @@ tools: Read, Bash, Grep, Glob, WebFetch
 
 ## 함께 쓰는 스킬
 
-이 에이전트는 프로젝트에 설치된 `vercel` 플러그인(`.claude/skills/vercel/`)의 `/deploy`, `/vercel-env`, `/vercel-check` 스킬을 적극 활용한다. 배포 실행은 `/deploy`, 환경변수 점검은 `/vercel-env`, 배포 후 상태 확인은 `/vercel-check`에 위임하는 것을 우선 고려한다.
+두 개의 Vercel 관련 플러그인이 이름 충돌 없이 공존한다:
+
+- `mukmate@skills-dir` (`.claude/skills/mukmate/`) — 먹메이트 PRD 기준 체크리스트가 담긴 프로젝트 전용 스킬. 배포 실행은 `/mukmate:deploy`, 환경변수 점검은 `/mukmate:vercel-env`, 배포 후 상태 확인은 `/mukmate:vercel-check`.
+- `vercel@claude-plugins-official` (user scope, 이미 설치됨) — 범용 Vercel/Next.js 전문 지식. Neon/Upstash 같은 Marketplace 스토리지 연동은 `vercel:vercel-storage`, 일반 배포/환경변수/상태는 `vercel:deploy`·`vercel:env`·`vercel:status`·`vercel:bootstrap` 참고.
+
+먹메이트 특유의 규칙(pooled 커넥션, 네이버 시크릿 미노출, PRD 13-3 체크리스트)이 걸린 작업은 `mukmate:*`를 우선 쓰고, 일반적인 Vercel 사용법이 필요하면 공식 `vercel:*` 스킬로 보완한다.
 
 ## 작업 범위
 

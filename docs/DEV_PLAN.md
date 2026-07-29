@@ -15,11 +15,12 @@
 ## Phase 0 — 프로젝트 기반 (선행 조건)
 
 - [x] git 저장소 초기화 및 첫 커밋 (`git init`, `.gitignore`에 `.env.local` 포함 확인)
-- [ ] Neon 프로젝트 생성, **pooled connection string** 확보 (PRD 10-3②)
+- [x] GitHub 원격 저장소 연결 및 push (`https://github.com/yellowm-ad/muk-mate`)
+- [x] Vercel CLI 설치·로그인, `vercel link`로 프로젝트 연결 완료 (프로젝트 `muk-mate`, GitHub 저장소 자동 연동됨)
+- [ ] Neon 프로젝트 생성, **pooled connection string** 확보 (PRD 10-3②) — Vercel 대시보드/CLI의 Marketplace 연동(Neon)으로 만들면 `DATABASE_URL`이 자동으로 pooled 상태로 Vercel 환경변수에 등록됨 (→ `vercel:vercel-storage` 스킬)
 - [ ] 네이버 개발자센터에서 애플리케이션 등록 — 지역 검색 API, Maps API Client ID/Secret 발급
-- [ ] `vercel link`로 Vercel 프로젝트 연결 (→ `vercel-deploy` 에이전트 / `/deploy`)
-- [ ] 환경변수 설정: `DATABASE_URL`(pooled), `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` — 로컬 `.env.local` + Vercel Production/Preview/Development 각각 (→ `/vercel-env`)
-- [ ] 빈 상태로라도 Vercel 첫 배포 실행 — 파이프라인을 미리 뚫어둔다 (PRD 15장 Day1 경고, → `/deploy`)
+- [ ] 환경변수 설정: `DATABASE_URL`(pooled), `NEXTAUTH_SECRET`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` — 로컬 `.env.local` + Vercel Production/Preview/Development 각각 (→ `/mukmate:vercel-env`)
+- [ ] 빈 상태로라도 Vercel 첫 배포 실행 — 파이프라인을 미리 뚫어둔다 (PRD 15장 Day1 경고, → `/mukmate:deploy`)
 
 ## Phase 1 — 데이터베이스 스키마 (→ `db-schema` 에이전트, `db-migrate` 스킬)
 
@@ -82,10 +83,10 @@
 
 ## Phase 8 — 프로덕션 검증 (→ `vercel-deploy` 에이전트)
 
-- [ ] Vercel 프로덕션 배포 (→ `/deploy`)
+- [ ] Vercel 프로덕션 배포 (→ `/mukmate:deploy`)
 - [ ] `/mvp-checklist`로 PRD 13-1/13-2 항목 전수 점검
 - [ ] 서로 다른 계정·기기 2대로 PRD 13-3 통합 테스트 (동시 접속, 실시간 갱신 체감 확인)
-- [ ] 네이버 API Client Secret이 브라우저 네트워크 탭에 노출되지 않는지 확인 (→ `/vercel-check`)
+- [ ] 네이버 API Client Secret이 브라우저 네트워크 탭에 노출되지 않는지 확인 (→ `/mukmate:vercel-check`)
 
 ---
 
