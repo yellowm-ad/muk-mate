@@ -1,16 +1,12 @@
-import { MessageCircle } from 'lucide-react'
-import { AppHeader } from '@/components/app-header'
-import { TabPlaceholder } from '@/components/tab-placeholder'
+import { ChatListView } from '@/components/chat/chat-list-view'
+import { getCurrentUser, listRoomsForUser } from '@/lib/server-data'
 
-export default function ChatPage() {
-  return (
-    <>
-      <AppHeader title="채팅" />
-      <TabPlaceholder
-        icon={MessageCircle}
-        title="채팅"
-        description="이 화면은 다음 단계에서 채워집니다."
-      />
-    </>
-  )
+export default async function ChatPage() {
+  const me = await getCurrentUser()
+  const rooms = await listRoomsForUser(me.id)
+
+  const myRooms = rooms.filter((r) => r.type === 'ORDER')
+  const communityRooms = rooms.filter((r) => r.type === 'COMMUNITY')
+
+  return <ChatListView myRooms={myRooms} communityRooms={communityRooms} />
 }

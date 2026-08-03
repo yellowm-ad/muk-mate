@@ -2,20 +2,46 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Check, MapPin, Navigation } from 'lucide-react'
+import { signIn } from 'next-auth/react'
+import { Check, Loader2, MapPin, Navigation } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ZONES } from '@/lib/constants'
+import { SIGNUP_DRAFT_KEY, ZONES } from '@/lib/constants'
+import { signup } from '@/lib/auth-client'
 import type { ZoneCode } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
+interface SignupDraft {
+  loginId: string
+  password: string
+  nickname: string
+}
+
 export default function OnboardingPage() {
   const router = useRouter()
+  const [draft, setDraft] = useState<SignupDraft | null>(null)
   const [step, setStep] = useState(1)
-  const [nickname, setNickname] = useState('배고픈북극곰')
+  const [nickname, setNickname] = useState('')
   const [zone, setZone] = useState<ZoneCode | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem(SIGNUP_DRAFT_KEY)
+    if (!raw) {
+      router.replace('/signup')
+      return
+    }
+    try {
+      const parsed = JSON.parse(raw) as SignupDraft
+      setDraft(parsed)
+      setNickname(parsed.nickname)
+    } catch {
+      router.replace('/signup')
+    }
+  }, [router])
 
   useEffect(() => {
     if (!toast) return
@@ -23,13 +49,49 @@ export default function OnboardingPage() {
     return () => clearTimeout(t)
   }, [toast])
 
+  async function handleFinish() {
+    if (!draft || !zone) return
+    setSubmitting(true)
+    setSubmitError(null)
+
+    const result = await signup({ loginId: draft.loginId, password: draft.password, nickname, zoneCode: zone })
+    if (!result.ok) {
+      setSubmitError(result.error)
+      setSubmitting(false)
+      return
+    }
+
+    const signInResult = await signIn('credentials', {
+      loginId: draft.loginId,
+      password: draft.password,
+      redirect: false,
+    })
+    sessionStorage.removeItem(SIGNUP_DRAFT_KEY)
+
+    if (signInResult?.error) {
+      router.push('/login')
+      return
+    }
+
+    // 방금 가입 직후 자동 로그인이라 "로그인 상태 유지"를 켠 것으로 간주
+    await fetch('/api/auth/session-guard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remember: true }),
+    })
+
+    router.push('/pots')
+  }
+
   function handleNext() {
     if (step === 1) {
       setStep(2)
       return
     }
-    router.push('/pots')
+    void handleFinish()
   }
+
+  if (!draft) return null
 
   return (
     <>
@@ -122,6 +184,22 @@ export default function OnboardingPage() {
               <Navigation className="size-4" />
               현재 위치로 자동 설정
             </Button>
+
+            {submitError && (
+              <div className="mt-3 flex flex-col gap-1.5 rounded-xl bg-destructive/10 p-3.5">
+                <p className="text-sm text-destructive">{submitError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sessionStorage.removeItem(SIGNUP_DRAFT_KEY)
+                    router.replace('/signup')
+                  }}
+                  className="self-start text-xs font-semibold text-destructive underline underline-offset-4"
+                >
+                  아이디 다시 정하기
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -129,11 +207,16 @@ export default function OnboardingPage() {
           <Button
             type="button"
             onClick={handleNext}
-            disabled={step === 2 && !zone}
+            disabled={(step === 2 && !zone) || submitting}
             className="h-12 w-full gap-1.5 rounded-xl text-base font-bold transition active:scale-[0.98]"
           >
             {step === 1 ? (
               '다음'
+            ) : submitting ? (
+              <>
+                <Loader2 className="size-5 animate-spin" />
+                가입하는 중...
+              </>
             ) : (
               <>
                 <Check className="size-5" />

@@ -18,9 +18,12 @@ function pickColor(seed: string) {
 
 export function StoreAvatar({
   name,
+  emoji,
   className,
 }: {
   name: string
+  /** 매칭되는 음식 이모지가 있으면 이니셜 대신 이걸 보여준다 (lib/food-emoji.ts) */
+  emoji?: string | null
   className?: string
 }) {
   const initial = name.trim().charAt(0) || '?'
@@ -33,7 +36,7 @@ export function StoreAvatar({
       )}
       aria-hidden
     >
-      {initial}
+      {emoji ?? initial}
     </div>
   )
 }

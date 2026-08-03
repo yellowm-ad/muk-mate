@@ -1,16 +1,18 @@
-import { User } from 'lucide-react'
-import { AppHeader } from '@/components/app-header'
-import { TabPlaceholder } from '@/components/tab-placeholder'
+import { MyPageView } from '@/components/my/my-page-view'
+import { getCurrentUser, getMyApplications, getMyHostedPots } from '@/lib/server-data'
 
-export default function MyPage() {
+export default async function MyPage() {
+  const me = await getCurrentUser()
+  const [hostedPots, applications] = await Promise.all([
+    getMyHostedPots(me.id),
+    getMyApplications(me.id),
+  ])
+
   return (
-    <>
-      <AppHeader title="마이" />
-      <TabPlaceholder
-        icon={User}
-        title="마이페이지"
-        description="이 화면은 다음 단계에서 채워집니다."
-      />
-    </>
+    <MyPageView
+      me={{ nickname: me.nickname, zoneCode: me.zoneCode }}
+      hostedPots={hostedPots}
+      applications={applications}
+    />
   )
 }

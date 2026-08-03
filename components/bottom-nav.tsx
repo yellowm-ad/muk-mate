@@ -6,19 +6,27 @@ import { MessageCircle, ShoppingBag, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const TABS = [
-  { href: '/pots', label: '공동주문', icon: ShoppingBag, match: '/pots' },
-  { href: '/chat', label: '채팅', icon: MessageCircle, match: '/chat' },
-  { href: '/my', label: '마이', icon: User, match: '/my' },
+  { href: '/pots', label: '공동주문', icon: ShoppingBag },
+  { href: '/chat', label: '채팅', icon: MessageCircle },
+  { href: '/my', label: '마이', icon: User },
 ] as const
+
+const MAIN_TAB_PATHS = ['/pots', '/chat', '/my']
 
 export function BottomNav() {
   const pathname = usePathname()
+
+  // 상세 페이지(/pots/[id], /chat/[id], /notifications 등)에서는 하단 탭바를 숨기고
+  // 상세 화면 전용 CTA 버튼(JoinButton 등)이 하단 전체를 사용하도록 한다.
+  if (!MAIN_TAB_PATHS.includes(pathname)) {
+    return null
+  }
 
   return (
     <nav className="sticky bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
       <ul className="flex items-stretch">
         {TABS.map((tab) => {
-          const active = pathname === tab.match || pathname.startsWith(tab.match + '/')
+          const active = pathname === tab.href
           const Icon = tab.icon
           return (
             <li key={tab.href} className="flex-1">

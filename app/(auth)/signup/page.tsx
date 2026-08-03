@@ -2,10 +2,12 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { AlertTriangle, Check } from 'lucide-react'
+import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { checkLoginIdAvailable } from '@/lib/auth-client'
+import { SIGNUP_DRAFT_KEY } from '@/lib/constants'
 
 function Counter({ value, max }: { value: number; max: number }) {
   return (
@@ -22,18 +24,37 @@ export default function SignupPage() {
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [nickname, setNickname] = useState('')
   const [idChecked, setIdChecked] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState<string | null>(null)
 
   const passwordMismatch = passwordConfirm.length > 0 && password !== passwordConfirm
   const canSubmit =
-    loginId.length > 0 &&
-    password.length > 0 &&
+    idChecked &&
+    loginId.length >= 4 &&
+    password.length >= 4 &&
     passwordConfirm.length > 0 &&
     nickname.length > 0 &&
     !passwordMismatch
 
+  async function handleCheckId() {
+    setChecking(true)
+    setCheckError(null)
+    try {
+      const available = await checkLoginIdAvailable(loginId)
+      setIdChecked(available)
+      if (!available) setCheckError('이미 사용 중인 아이디예요.')
+    } catch {
+      setIdChecked(false)
+      setCheckError('중복확인에 실패했어요. 다시 시도해 주세요.')
+    } finally {
+      setChecking(false)
+    }
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!canSubmit) return
+    sessionStorage.setItem(SIGNUP_DRAFT_KEY, JSON.stringify({ loginId, password, nickname }))
     router.push('/onboarding')
   }
 
@@ -55,31 +76,41 @@ export default function SignupPage() {
                 id="loginId"
                 value={loginId}
                 maxLength={10}
-                placeholder="영문·숫자 10자 이내"
+                placeholder="영문·숫자 4~10자"
                 onChange={(e) => {
                   setLoginId(e.target.value)
                   setIdChecked(false)
+                  setCheckError(null)
                 }}
               />
               <Button
                 type="button"
                 variant="outline"
-                disabled={loginId.length === 0}
-                onClick={() => setIdChecked(true)}
-                className="h-12 shrink-0 rounded-xl px-3 text-sm font-semibold transition active:scale-[0.98]"
+                disabled={loginId.length < 4 || checking}
+                onClick={handleCheckId}
+                className="h-12 shrink-0 gap-1.5 rounded-xl px-3 text-sm font-semibold transition active:scale-[0.98]"
               >
+                {checking && <Loader2 className="size-3.5 animate-spin" />}
                 중복확인
               </Button>
             </div>
             <p
-              className={`text-xs ${idChecked ? 'flex items-center gap-1 text-status-ordered' : 'text-muted-foreground'}`}
+              className={`text-xs ${
+                idChecked
+                  ? 'flex items-center gap-1 text-status-ordered'
+                  : checkError
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+              }`}
             >
               {idChecked ? (
                 <>
                   <Check className="size-3.5" /> 사용 가능한 아이디예요.
                 </>
+              ) : checkError ? (
+                checkError
               ) : (
-                '로그인에 사용할 아이디를 입력하세요.'
+                '로그인에 사용할 아이디를 입력하세요 (4~10자).'
               )}
             </p>
           </div>
@@ -97,7 +128,7 @@ export default function SignupPage() {
               type="password"
               value={password}
               maxLength={16}
-              placeholder="비밀번호 16자 이내"
+              placeholder="4~16자"
               onChange={(e) => setPassword(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">잊어버리지 않도록 주의하세요.</p>

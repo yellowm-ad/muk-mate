@@ -1,127 +1,49 @@
 # 먹메이트 (MukMate)
 
-전북대 덕진구 생활권 학생들을 위한 공동주문 매칭 모바일 웹 서비스. 최소주문금액·배달비 부담을 가까운 학생끼리 나눌 수 있게 모집·참여·채팅을 연결한다. **전체 요구사항의 단일 소스는 `docs/PRD.md`(v2.2)다.** 기능 작업 전 관련 장을 먼저 확인한다.
+전북대 덕진구 생활권 학생들을 위한 공동주문 매칭 모바일 웹 서비스. 전체 요구사항·근거는 **`docs/PRD.md` (v2.3)가 단일 소스**다 — 이 파일은 방향을 잡기 위한 요약이며, 세부 규칙은 아래 스킬 문서를 따른다.
 
-## 개발 계획 (`docs/DEV_PLAN.md`)
+## 지금 상태
 
-실제 개발은 **의존성 순서로 정리된 `docs/DEV_PLAN.md` 체크리스트를 따른다** (PRD 15장 Day 구분은 캘린더 기준, DEV_PLAN은 "무엇이 무엇보다 먼저 되어야 하는가" 기준 — 함께 참고).
+Phase 0~7(`docs/SPRINT_PLAN.md`) 전부 완료 — DB(Neon)·인증·공동주문·카카오 장소 검색·채팅·마이페이지·프로덕션 검증까지 실제로 동작한다. 이후 Phase 7 완료 시점을 넘어선 추가 작업 2건이 더 들어갔다(`docs/SPRINT_PLAN.md`의 "Phase 7 이후" 절 참고).
 
-- **작업을 완료하면 그 자리에서 즉시 `docs/DEV_PLAN.md`의 해당 `- [ ]`를 `- [x]`로 갱신한다.** 다음 작업으로 넘어가기 전에 반드시 반영한다.
-- 상태 판단이 애매하거나 여러 항목을 한 번에 점검하고 싶으면 `/dev-plan` 스킬을 호출한다 — 코드 상태를 스캔해 체크박스를 갱신하고 막힌 항목을 보고한다.
-- Phase 순서(0 프로젝트 기반 → 1 DB 스키마 → 2 인증 → 3 공동주문 코어 → 4 참여 승인 → 5 채팅 → 6 마이페이지 → 7 P1 선택 → 8 프로덕션 검증)를 건너뛰지 않는다. 뒤 Phase가 앞 Phase 없이 동작하면 권한 검사 등이 누락될 위험이 크다.
+- **완료**: Neon Postgres 연결(Vercel 마켓플레이스 프로비저닝, 무료 티어), Auth.js Credentials 회원가입/로그인, 공동주문 목록/상세/작성/참여/승인거절/상태전이, 화면 #7(참여 신청자 관리), 카카오 로컬 API 장소 검색, 폴링 채팅(주문 채팅 + 음식 커뮤니티), 마이페이지·정보수정·비밀번호 변경, **메시지/사용자 신고 기능**(PRD §17-3에서 "MVP 미구현"으로 정했던 항목인데 실제로 구현됨 — PRD가 아직 이 결정을 반영하지 못했었어서 문서를 갱신함), **참여 신청/승인 플로우 재구현**(FEAT-06: `/api/pots/:id/join`·`/members/:userId`·`/requests`)
+- **2026-07-30 정리 완료**: 참여 신청·승인 로직이 `join`/`members`/`requests`(신규) 와 `participations`/`applications`(레거시) 두 벌로 공존하던 문제를 해결 — 레거시 API 라우트와 그걸 쓰던 죽은 코드(`lib/api.ts`의 `applyToPot`/`updateApplicationStatus`)를 삭제하고, "참여 신청자 관리" 화면(`pot-applications-view.tsx`)도 신규 `members` 경로로 옮겨 로직을 한 곳으로 통합했다. 마이그레이션 이력도 `npx drizzle-kit generate`로 `drizzle/0002_empty_martin_li.sql`을 다시 만들어 스키마 파일·실제 Neon DB·이력을 재동기화했고, 아무 코드도 안 쓰던 고아 마이그레이션(`migrations/006_join_approval.sql`, `decided_at`/`decided_by` 컬럼)은 제거하되 실제로 유용한 부분(대기 신청 목록 조회용 부분 인덱스 `idx_participations_pending`)은 `lib/db/schema.ts`에 정식으로 옮겨 적용했다.
+- **2026-07-30 관리자 기능 신설(v2.3, PRD §17-4)**: `/admin` 경로에 관리자 권한 검증(`users.role`), 신고 처리(`/admin/reports` — 상태 변경·회원 정지 액션), 회원 제재(로그인·참여신청·모집글작성·채팅전송 전 경로에 실제 적용되도록 `accountStatus` 검사 확장), 모집글 직권 삭제(`/admin/pots`, 참여자/방장 조건 무시) 4개 기능을 구현·배포. 자세한 정의·로드맵·검증 기록은 `docs/ADMIN_FEATURES.md`·`docs/ADMIN_ROADMAP.md` 참고. 관리자 부여는 셀프서비스 없이 DB에서 직접 `role='ADMIN'`으로 처리.
+- **남은 것**: 모집글 수정 화면(보류 중), P1 기능(Phase 6 — 거리 표시, 분담 금액)
+- `lib/api.ts` — **클라이언트(브라우저) 전용** fetch() 함수만 있다. DB/인증을 직접 import하지 않는다 — 그러면 서버 전용 코드가 브라우저 번들에 끼어들어가 빌드가 깨진다.
+- `lib/server-data.ts` — **서버 컴포넌트 전용** DB 조회 함수(`server-only` 패키지로 가드됨). 서버 컴포넌트(페이지)는 이 파일을, 클라이언트 컴포넌트는 `lib/api.ts`를 쓴다. 이 경계를 헷갈리면 안 된다.
+- `lib/db/schema.ts` — 실제 Neon 스키마(Drizzle). PRD §11-2와 1:1 대응. 컬럼을 바꾸면 `drizzle-kit generate` → `db:push`까지 해야 반영된다.
+- `lib/types.ts` — 클라이언트(mock 시절부터 있던) 도메인 타입. `lib/server-data.ts`가 DB 로우를 이 타입 모양으로 매핑해서 돌려준다.
+- `lib/constants.ts` — 활동 지역(zone) 4권역이 이미 PRD §17-1의 제안대로 확정 적용됨: `GUJEONGMUN`(구정문) · `SINJEONGMUN`(신정문) · `DORM`(기숙사) · `SADAEBUGO`(사대부고 주변). 이 목록을 임의로 바꾸지 말 것 — 바꾸려면 PRD §17-1 결정을 먼저 갱신한다.
+- 라우팅은 App Router 그룹으로 분리: `app/(auth)/` (로그인/회원가입/온보딩), `app/(main)/` (공동주문/채팅/마이 + 하단 내비 레이아웃), `app/admin/` (관리자 전용, `role==='ADMIN'` 아니면 `/login` 또는 `/pots`로 리다이렉트). `(main)` 전체는 로그인 세션이 없으면 `/login`으로 리다이렉트된다 — 게스트 접근 허용은 2026-07-30 한때 시도됐다가 같은 날 다시 닫혔다(v2.7, "로그인 상태 유지" 체크박스 도입과 함께).
+- **"로그인 상태 유지" 체크박스(v2.7)**: NextAuth 세션 쿠키 자체는 30일 고정(콜백으로 로그인마다 다르게 줄 공식 방법이 없음)이라, 별도 가드 쿠키(`lib/auth-constants.ts`의 `mukmate_remember_guard`)로 흉내낸다 — 체크 시 30일 지속, 체크 해제 시 브라우저 세션 쿠키(종료 시 삭제)로 발급. `getCurrentUser()`/`getSessionUserOrNull()`이 NextAuth 세션 + 이 쿠키가 둘 다 있어야 로그인으로 인정한다.
 
-## 기술 스택 (PRD 10장)
+## 기술 스택 (PRD §10-1, 확정)
 
-- **웹 프레임워크**: Next.js 16 (App Router), React 19, TypeScript
-- **DB**: Neon DB (PostgreSQL), Vercel Marketplace 연동으로 생성 — `DATABASE_URL`은 pooled, Vercel이 자동 관리
-- **ORM**: Drizzle ORM (구현 완료)
-- **배포**: Vercel
-- **장소/지도**: 카카오 로컬 API · 카카오맵 API (0-3절 참고, 검색은 서버 프록시 경유, 지도 SDK는 JS 키로 클라이언트 로드)
-- **인증**: Auth.js(NextAuth) Credentials + bcrypt
-- **스타일**: Tailwind CSS v4 + shadcn/ui (주황/화이트 톤)
-- **채팅 갱신**: WebSocket 미사용, 폴링(2~3초 간격) 방식만 사용
-- **패키지 매니저**: pnpm (설정은 `pnpm-workspace.yaml` — `overrides`, `allowBuilds` 참고. `package.json`의 `pnpm` 필드는 최신 pnpm에서 더 이상 읽지 않아 제거됨)
+Next.js (App Router) · Neon DB(PostgreSQL, HTTP 드라이버) · Vercel 배포 · Drizzle ORM · Auth.js(NextAuth) Credentials + bcrypt · 카카오 로컬 API (서버 프록시 경유) · Tailwind CSS · shadcn/ui.
 
-## 프로젝트 구조
+## 절대 어기면 안 되는 제약 3가지 (PRD §10-3)
 
-```
-app/
-  (auth)/login, signup, onboarding   — 비로그인 진입 화면
-  (main)/pots, pots/[id], chat, my   — 로그인 후 하단 내비게이션 화면
-components/
-  ui/            — shadcn 프리미티브
-  pots/          — 공동주문 목록/상세 카드
-  bottom-nav.tsx, app-header.tsx, status-badge.tsx, mobile-frame.tsx 등 공통 UI
-lib/
-  types.ts       — 도메인 타입 (Pot, Participation, ChatRoom, Message, Place, User 등)
-  api.ts         — 데이터 접근 레이어. 컴포넌트는 이 함수만 호출하고 mock-data를 직접 import하지 않는다
-  mock-data.ts   — 현재 lib/api.ts가 반환하는 목데이터 (실제 DB 연동 시 대체 대상)
-  format.ts, constants.ts, utils.ts
-docs/PRD.md      — 요구사항 원문 (v2.2)
-```
+1. **채팅은 폴링만.** Vercel 서버리스에는 WebSocket/SSE 상시 연결이 맞지 않는다. 2-3초 간격 폴링, `messages.id`(bigserial) 커서 증분 조회.
+2. **DB 커넥션은 반드시 pooled.** 직접 연결 문자열은 로컬에선 되다가 배포 후 커넥션 고갈로 500 에러가 난다.
+3. **마감 시각 자동 처리는 크론 없이, 조회 시점 판정으로.** 별도 스케줄러를 만들지 않는다.
 
-**데이터 연동 원칙**: `lib/api.ts`의 각 함수는 `TODO: replace with real API call` 주석과 함께 목데이터를 반환 중이다. 실제 연동 시 **함수 시그니처는 유지한 채 내부 구현만 실제 `fetch`로 교체**한다 — 컴포넌트 쪽 코드는 건드릴 필요가 없어야 한다.
+그리고 항상: 카카오 API는 서버(Route Handler)에서만 호출 — 클라이언트가 직접 부르면 REST API 키가 노출된다. 로그인은 Auth.js Credentials + bcrypt만 사용 — Clerk/Descope/Auth0/OAuth/SMS 인증은 이 프로젝트의 명시적 비목표다.
 
-## 데이터 모델 요약 (PRD 11장 — 전체 SQL은 PRD 참고)
+## 의사결정 우선순위 (PRD §18) — 애매하면 이 순서로 판단
 
-| 테이블 | 핵심 컬럼 |
-|---|---|
-| `zones` | `code`(PK), `label`, `sort_order` — 활동 지역 코드 테이블 |
-| `users` | `login_id`(UNIQUE), `password_hash`, `nickname`, `zone_code` |
-| `pots` | `host_id`, `zone_code`, `store_*`(name/address/lat/lng), `order_summary`, `target_type`(HEADCOUNT\|AMOUNT), `target_value`, `delivery_fee`, `deadline_at`, `pickup_at`, `pickup_*`, `status`(OPEN→CLOSED→ORDERED, 또는 CANCELED) |
-| `participations` | `pot_id`, `user_id`, `apply_message`, `menu_amount`, `approval_status`(PENDING\|APPROVED\|REJECTED), `(pot_id, user_id)` UNIQUE |
-| `chat_rooms` | `type`(ORDER\|COMMUNITY), `pot_id`(ORDER일 때만) |
-| `messages` | `id` bigserial(폴링 커서), `room_id`, `sender_id`(SYSTEM이면 NULL), `type`, `content`, `created_at` |
+1. 공동주문을 만들고 참여자를 모을 수 있는가?
+2. 모집자가 참여자를 관리하고, 승인된 사람끼리 대화할 수 있는가?
+3. 사용자가 자신의 주문 상태를 다시 확인할 수 있는가?
+4. 모바일 웹에서 과정이 단순하고 빠른가?
+5. 위 네 가지와 직접 관련 없는 기능은 미룬다 — 특히 결제/송금, 실시간 위치, AI 추천/매칭, 네이티브 앱, 평점/포인트, 학교 인증은 명시적 비목표(PRD §12)다.
 
-금액은 전부 `integer`(원), 시간은 전부 `timestamptz`. 계좌 등 금융정보 컬럼은 두지 않는다.
+## 개발 시 참고할 스킬/에이전트
 
-## API 엔드포인트 맵 (PRD 11-3)
+`.claude/skills/`에 PRD 근거를 담은 참조 스킬 8개, `.claude/agents/`에 위임용 서브에이전트 4개가 이미 설정되어 있다 (DB 스키마, API 계약, 인증, 카카오 장소 검색 연동, 공동주문 상태전이, 채팅 폴링, 모바일 UI, 스코프 가드). 관련 작업을 할 때 해당 스킬이 자동으로 컨텍스트에 잡히며, 더 깊은 리뷰가 필요하면 동일 주제의 에이전트에 위임할 수 있다. 세부 규칙을 다시 찾아 헤매지 말고 이 스킬들을 먼저 확인할 것.
 
-| 경로 | 권한 |
-|---|---|
-| `POST /api/auth/signup`, `GET /api/auth/check-id`, `POST/그 외 /api/auth/login`\|`logout` | 공개 |
-| `PATCH /api/me`, `PATCH /api/me/password` | 본인만 |
-| `GET /api/pots`, `GET /api/pots/:id` | 공개 |
-| `POST /api/pots` | 로그인 |
-| `PATCH /api/pots/:id` | **모집자만** |
-| `POST /api/pots/:id/applications` | 로그인 |
-| `PATCH /api/applications/:id` | **모집자만** |
-| `GET /api/places/search?q=` | 로그인 (카카오 로컬 API 서버 프록시) |
-| `GET /api/rooms`, `GET/POST /api/rooms/:id/messages` | **참여자만**(ORDER) / 로그인 사용자(COMMUNITY) |
+Vercel 공식 플러그인(`vercel-plugin`, 프로젝트 `.claude/settings.json`에 등록됨)도 Next.js/배포/env/shadcn 관련 범용 스킬을 제공한다. 단, 그 플러그인의 `auth` 스킬(Clerk 등 외부 인증 제공자)은 이 프로젝트에는 적용하지 않는다 — `mukmate-auth` 스킬을 따른다.
 
-세부 권한 판단 로직은 `permission-matrix` 스킬 참고.
+## 완료 기준
 
-## 화면 · 내비게이션 (PRD 6장, 13개 화면)
-
-하단 내비게이션 3탭 `공동주문 · 채팅 · 마이`을 로그인 후 모든 화면에서 동일 위치에 유지. 상세 화면 목록·디자인 톤(주황/화이트, 375~430px, 터치 타깃 44px+)은 `screen-tone` 스킬 참고.
-
-## 절대 원칙
-
-- DB 읽기/쓰기는 서버(Route Handler / Server Action)에서만 수행한다. 클라이언트에서 직접 DB·카카오 로컬 API(장소 검색)를 호출하지 않는다.
-- 비밀번호는 bcrypt 해시로만 저장한다. 계좌번호 등 금융정보는 어떤 테이블에도 저장하지 않는다.
-- 권한 검사(모집자 전용, 승인된 참여자 전용)는 매 API 요청마다 서버에서 수행한다. UI에서 버튼을 숨기는 것으로 대체하지 않는다 — URL 직접 입력 접근도 막아야 한다.
-- DB 연결 문자열, 카카오 `REST API 키`는 코드에 하드코딩하지 않고 Vercel 환경변수(`NEXT_PUBLIC_` 접두사 없이)로만 관리한다. 카카오맵 `JavaScript 키`는 도메인 제한 전제로 `NEXT_PUBLIC_KAKAO_JS_KEY`로 노출해도 된다 (0-3절 예외).
-- 시간은 `timestamptz`로 저장하고 KST 기준으로 표시한다.
-- 채팅은 WebSocket 대신 폴링만 쓰고, 마감 시각 판정은 크론 없이 조회 시점에 계산한다 (PRD 10-3).
-- 결제·송금·실시간 위치 추적·학교 인증·비밀번호 재설정 등은 만들지 않는다 (PRD 12장 "하지 않을 것" 전체 목록 참고).
-
-## 개발 명령어
-
-```
-pnpm dev      # 개발 서버
-pnpm build    # 프로덕션 빌드 (next.config.mjs에서 타입 에러는 무시하도록 설정되어 있어 런타임 오류를 별도로 확인해야 함)
-pnpm lint
-```
-
-## 서브에이전트 (`.claude/agents/`)
-
-작업 영역에 맞는 전문 에이전트가 구성되어 있고, 각자 관련 프로젝트 스킬을 프리로드한다.
-
-- `db-schema` — Neon/Drizzle 스키마·마이그레이션·커넥션 풀링 (`db-migrate`, `permission-matrix`)
-- `api-backend` — Route Handler/Server Action, Auth.js 인증, 서버 권한 검사 (`auth-setup`, `permission-matrix`)
-- `kakao-places` — 카카오 로컬·카카오맵 API 서버 프록시, 거리 계산 (`kakao-proxy`, `permission-matrix`)
-- `chat-polling` — 주문 채팅·커뮤니티 채팅 폴링 로직 (`chat-polling-pattern`, `permission-matrix`)
-- `mobile-ui` — Tailwind/shadcn 기반 13개 화면 UI 구현 (`screen-tone`)
-- `vercel-deploy` — Vercel 배포, 환경변수, 빌드/런타임 트러블슈팅 (`mukmate` 플러그인의 `/mukmate:deploy`·`/mukmate:vercel-env`·`/mukmate:vercel-check` + 공식 `vercel` 플러그인 활용)
-
-## 진단용 스킬
-
-- `/dev-plan` — `docs/DEV_PLAN.md` 체크리스트를 코드 상태와 동기화 (완료 항목 체크, 의존성 위반 경고)
-- `/mvp-checklist` — PRD 13장 완료 기준을 코드/DB 실제 상태와 대조해 점검
-- `/sprint-day [N]` — PRD 15장 Day N 목표 대비 진행 상황 점검, 일정 초과 시 축소 우선순위 안내
-- `/mukmate:deploy`, `/mukmate:vercel-env`, `/mukmate:vercel-check` — 먹메이트 전용 배포/환경변수/상태 점검 (`mukmate@skills-dir` 플러그인, `.claude/skills/mukmate/`)
-
-## Vercel 플러그인 (2종 — 이름 충돌 없이 공존)
-
-- **`vercel@claude-plugins-official`** (user scope, 이미 설치됨) — 범용 Vercel/Next.js 전문 지식. `/vercel:deploy`, `/vercel:env`, `/vercel:status`, `/vercel:bootstrap`, `/vercel:nextjs`, `/vercel:shadcn`, `/vercel:vercel-storage`(Neon/Upstash 마켓플레이스 연동 포함) 등 다수. 일반적인 Vercel 작업은 이쪽을 우선 활용한다.
-- **`mukmate@skills-dir`** (project scope, `.claude/skills/mukmate/`) — 먹메이트 PRD 기준 체크리스트가 들어간 프로젝트 전용 배포 스킬. 두 플러그인 모두 이름이 `vercel`이면 나중 등록된 쪽이 로드되지 않으므로, 이 플러그인은 이름을 `mukmate`로 지정해 충돌을 피했다.
-
-## 현재 상태
-
-- 프론트엔드: 화면 스캐폴딩(로그인/회원가입/온보딩, 공동주문 목록·상세, 채팅·마이 placeholder)까지 되어 있고 `lib/api.ts`가 `mock-data.ts`를 반환하는 프로토타입 단계.
-- DB: **Neon 프로젝트 생성 완료(Vercel Marketplace 연동), 마이그레이션 적용 + zones/커뮤니티 채팅방 시드까지 완료.** `DATABASE_URL`은 Vercel이 자동 관리하며 로컬은 `vercel env pull`로 동기화한다 (직접 편집하지 않음).
-- 인증/장소 API 프록시/채팅 폴링 API: 아직 구현 전 (DEV_PLAN Phase 2~5). `NEXTAUTH_SECRET`은 등록됨. **(v2.2) 장소·지도 API를 네이버 → 카카오로 전환** — 기존 `NAVER_CLIENT_ID/SECRET`은 Vercel/로컬에서 제거했고, `KAKAO_REST_API_KEY`/`NEXT_PUBLIC_KAKAO_JS_KEY`는 아직 값이 비어있다 (카카오 개발자 콘솔에서 발급 대기).
-- git: 저장소 초기화 완료, GitHub(`https://github.com/yellowm-ad/muk-mate`)에 push 완료.
-- Vercel: CLI 로그인, `vercel link`(`muk-mate`, GitHub 자동 연동), DB/NextAuth 환경변수 등록, **첫 프로덕션 배포까지 완료** — https://muk-mate-mu.vercel.app (아직 mock 데이터 프론트엔드).
-
-다음 착수 지점: 카카오 API 키 발급·등록 → Phase 2(인증) — Auth.js Credentials + bcrypt 구현.
+기능 하나를 "완료"로 보기 전에 PRD §13-1/13-2 체크리스트(서로 다른 두 계정으로 전체 플로우가 Vercel 프로덕션 URL에서 새로고침·재배포 후에도 동작하는지)를 기준으로 확인한다. 자세한 체크리스트는 `mukmate-mvp-scope-guard` 스킬 참고.
