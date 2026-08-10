@@ -180,8 +180,9 @@ export function PotDetailView({
         </div>
       </section>
 
-      {/* 매너 평가 진입 배너 (§17-5) — 주문 완료 후 호스트/승인된 참여자에게만 노출 */}
-      {pot.status === 'ORDERED' && (isHost || viewerState === 'MEMBER') && (
+      {/* 매너 평가 진입 배너 (§17-5) — 호스트/승인된 참여자에게 노출.
+          임시 조치(2026-08-10): 완료 플로우가 안정화되기 전까지 ORDERED 여부와 무관하게 노출한다. */}
+      {pot.status !== 'CANCELED' && (isHost || viewerState === 'MEMBER') && (
         <section className="px-4 pt-2">
           <Link
             href={`/pots/${pot.id}/manner`}

@@ -6,9 +6,9 @@ import { ShieldAlert, ShoppingBag } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { ReportModal } from '@/components/chat/report-modal'
 import { MannerAvatar } from '@/components/manner-avatar'
+import { MannerGauge } from '@/components/manner-gauge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { MANNER_STAGE_LABELS } from '@/lib/manner-constants'
 import type { MannerProfile } from '@/lib/types'
 
 export function UserProfileView({
@@ -24,13 +24,8 @@ export function UserProfileView({
 
       <div className="flex flex-col items-center gap-3 border-b border-border bg-card px-4 py-8">
         <MannerAvatar stage={profile.manner.stage} size={88} />
-        <div className="text-center">
-          <p className="text-lg font-bold text-foreground">{profile.nickname}</p>
-          <p className="mt-1 text-sm font-semibold text-primary">
-            {profile.manner.score !== null ? `매너 포만도 ${Math.round(profile.manner.score)}점 · ` : ''}
-            {MANNER_STAGE_LABELS[profile.manner.stage]}
-          </p>
-        </div>
+        <p className="text-lg font-bold text-foreground">{profile.nickname}</p>
+        <MannerGauge score={profile.manner.score} stage={profile.manner.stage} className="w-full max-w-xs" />
       </div>
 
       <div className="flex flex-col gap-3 p-4">

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { MannerAvatar } from '@/components/manner-avatar'
+import { MannerGauge } from '@/components/manner-gauge'
 import { ApprovalBadge, PotStatusBadge } from '@/components/status-badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -33,7 +34,6 @@ import {
 } from '@/components/ui/dialog'
 import { zoneLabel } from '@/lib/constants'
 import { formatDateTime, formatWon } from '@/lib/format'
-import { MANNER_STAGE_LABELS } from '@/lib/manner-constants'
 import { cn } from '@/lib/utils'
 import type { MannerProfile, Participation, Pot, ZoneCode } from '@/lib/types'
 
@@ -57,23 +57,22 @@ export function MyPageView({
       <AppHeader title="마이" />
 
       {/* 1. 프로필 카드 */}
-      <div className="flex items-center gap-3 border-b border-border bg-card px-4 py-4">
-        <MannerAvatar stage={manner.stage} size={48} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-bold text-foreground">{me.nickname}</p>
-          <p className="text-sm text-muted-foreground">{zoneLabel(me.zoneCode)}</p>
-          <p className="mt-0.5 text-xs font-semibold text-primary">
-            {manner.score !== null ? `매너 포만도 ${Math.round(manner.score)}점 · ` : ''}
-            {MANNER_STAGE_LABELS[manner.stage]}
-          </p>
+      <div className="flex flex-col gap-3 border-b border-border bg-card px-4 py-4">
+        <div className="flex items-center gap-3">
+          <MannerAvatar stage={manner.stage} size={48} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-bold text-foreground">{me.nickname}</p>
+            <p className="text-sm text-muted-foreground">{zoneLabel(me.zoneCode)}</p>
+          </div>
+          <Link
+            href="/my/edit"
+            className="flex shrink-0 items-center gap-0.5 text-sm font-semibold text-primary transition hover:underline"
+          >
+            정보 수정
+            <ChevronRight className="size-4" />
+          </Link>
         </div>
-        <Link
-          href="/my/edit"
-          className="flex shrink-0 items-center gap-0.5 text-sm font-semibold text-primary transition hover:underline"
-        >
-          정보 수정
-          <ChevronRight className="size-4" />
-        </Link>
+        <MannerGauge score={manner.score} stage={manner.stage} size="sm" />
       </div>
 
       {/* 2. 내 활동 요약 카드 */}

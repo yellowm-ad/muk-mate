@@ -875,12 +875,15 @@ export async function getMannerReviewTargets(potId: string, viewerId: string): P
   const db = getDb()
 
   const [pot] = await db
-    .select({ hostId: pots.hostId, status: pots.status, deadlineAt: pots.deadlineAt })
+    .select({ hostId: pots.hostId, status: pots.status })
     .from(pots)
     .where(eq(pots.id, potId))
     .limit(1)
   if (!pot) return []
-  if (computeEffectiveStatus(pot.status, pot.deadlineAt) !== 'ORDERED') return []
+  // 임시 조치(2026-08-10): "거래 완전 종료" 플로우가 아직 실사용에서 안정적이지 않아
+  // ORDERED 요건은 임시로 풀고 같은 pot의 호스트↔승인 참여자 관계만 유지한다. 취소된
+  // 주문 평가 금지(문서 §17)는 그대로 지킨다. 완료 플로우가 안정화되면 되돌린다 (§17-5).
+  if (pot.status === 'CANCELED') return []
 
   const isHost = viewerId === pot.hostId
   if (!isHost) {
@@ -949,7 +952,15 @@ export type SubmitMannerReviewResult =
   | { ok: true }
   | { ok: false; code: 'NOT_FOUND' | 'FORBIDDEN' | 'DUPLICATE' | 'INVALID_TAGS'; message: string }
 
-/** 문서 §7의 모든 평가 가능 조건(로그인/완료상태/승인관계/자기자신아님/중복없음/7일이내)을 검사한 뒤 insert한다. */
+/**
+ * 문서 §7의 평가 가능 조건(로그인/승인관계/자기자신아님/중복없음)을 검사한 뒤 insert한다.
+ *
+ * 임시 조치(2026-08-10): 원래는 pot이 ORDERED이고 완료 후 7일 이내여야 평가 가능했으나,
+ * "거래 완전 종료" 플로우가 아직 실사용에서 안정적이지 않아 그 상태/기간 게이트는 임시로
+ * 풀었다. 대신 문서 §17의 "취소된 공동주문 평가 금지"는 그대로 지키고, 관계 요건(같은 pot의
+ * 호스트↔승인 참여자)은 그대로 유지해 완전히 낯선 사람을 평가하는 것은 막는다. ORDERED가 된
+ * pot에 한해서는 7일 기한도 여전히 적용한다. 완료 플로우가 안정화되면 원래 조건으로 되돌린다.
+ */
 export async function submitMannerReview(
   potId: string,
   reviewerId: string,
@@ -968,16 +979,16 @@ export async function submitMannerReview(
 
   const db = getDb()
   const [pot] = await db
-    .select({ hostId: pots.hostId, status: pots.status, deadlineAt: pots.deadlineAt, orderedAt: pots.orderedAt })
+    .select({ hostId: pots.hostId, status: pots.status, orderedAt: pots.orderedAt })
     .from(pots)
     .where(eq(pots.id, potId))
     .limit(1)
   if (!pot) return { ok: false, code: 'NOT_FOUND', message: '존재하지 않는 공동주문입니다.' }
 
-  if (computeEffectiveStatus(pot.status, pot.deadlineAt) !== 'ORDERED' || !pot.orderedAt) {
-    return { ok: false, code: 'FORBIDDEN', message: '주문이 완료된 이후에만 평가할 수 있습니다.' }
+  if (pot.status === 'CANCELED') {
+    return { ok: false, code: 'FORBIDDEN', message: '취소된 공동주문은 평가할 수 없습니다.' }
   }
-  if (Date.now() - pot.orderedAt.getTime() > MANNER_REVIEW_WINDOW_MS) {
+  if (pot.status === 'ORDERED' && pot.orderedAt && Date.now() - pot.orderedAt.getTime() > MANNER_REVIEW_WINDOW_MS) {
     return { ok: false, code: 'FORBIDDEN', message: '평가 가능 기간(완료 후 7일)이 지났습니다.' }
   }
 

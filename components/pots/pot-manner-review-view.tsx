@@ -159,7 +159,7 @@ export function PotMannerReviewView({
           <div className="my-4 flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card p-8 text-center">
             <p className="text-sm font-bold text-foreground">평가할 수 있는 대상이 없어요.</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              주문 완료 후 7일이 지났거나, 이미 모든 평가를 마쳤을 수 있어요.
+              이미 모든 평가를 마쳤거나, 이 공동주문의 호스트/승인된 참여자가 아닐 수 있어요.
             </p>
           </div>
         ) : (
