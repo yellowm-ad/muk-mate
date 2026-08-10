@@ -1,19 +1,30 @@
 import 'server-only'
 
-import { and, asc, count, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { auth } from '@/auth'
 import { REMEMBER_GUARD_COOKIE } from '@/lib/auth-constants'
-import { getDb } from '@/lib/db'
-import { chatRooms, messages, notifications, participations, pots, roomReads, users } from '@/lib/db/schema'
+import { getDb, getPgErrorCode } from '@/lib/db'
+import { chatRooms, mannerProfiles, mannerReviews, messages, notifications, participations, pots, roomReads, users } from '@/lib/db/schema'
 import { formatDateTime } from '@/lib/format'
+import {
+  applyDueMannerReviews,
+  getMannerStage,
+  MANNER_MIN_REVIEWS_TO_SHOW_SCORE,
+  MANNER_REVIEW_WINDOW_MS,
+  MANNER_TAGS_BY_RATING,
+  mannerReviewVisibleAfter,
+} from '@/lib/manner'
 import { createNotificationBulk } from '@/lib/notifications'
 import { resolveViewerState } from '@/lib/pots/viewer-state'
 import type {
   AppNotification,
   ChatRoom,
+  MannerProfile,
+  MannerRating,
+  MannerReviewTarget,
   Message,
   Participation,
   Pot,
@@ -811,4 +822,205 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
     .where(and(eq(notifications.recipientId, userId), eq(notifications.isRead, false)))
 
   return cnt
+}
+
+// ─────────────────────────────────────────────────────────────
+// 매너 포만도(PRD §17-5)
+// ─────────────────────────────────────────────────────────────
+
+/** 평가 3개 미만이면 score를 숨긴다(문서 §4-1 공개 조건) — applyDueMannerReviews로 최신 상태를 먼저 반영. */
+export async function getMannerProfile(userId: string): Promise<MannerProfile> {
+  await applyDueMannerReviews(userId)
+
+  const db = getDb()
+  const [row] = await db.select().from(mannerProfiles).where(eq(mannerProfiles.userId, userId)).limit(1)
+
+  const score = row ? Number(row.score) : 50
+  const reviewCount = row?.reviewCount ?? 0
+
+  return {
+    userId,
+    score: reviewCount < MANNER_MIN_REVIEWS_TO_SHOW_SCORE ? null : score,
+    reviewCount,
+    positiveCount: row?.positiveCount ?? 0,
+    negativeCount: row?.negativeCount ?? 0,
+    stage: getMannerStage(score, reviewCount),
+  }
+}
+
+/** 사용자 프로필 화면(§12-2)의 "완료한 공동주문 횟수" — 호스트/참여자 구분 없이 APPROVED 참여(호스트 본인 행도 포함)가 ORDERED까지 간 pot 수. */
+export async function getUserCompletedPotCount(userId: string): Promise<number> {
+  const db = getDb()
+
+  const [{ cnt }] = await db
+    .select({ cnt: count() })
+    .from(participations)
+    .innerJoin(pots, eq(participations.potId, pots.id))
+    .where(
+      and(
+        eq(participations.userId, userId),
+        eq(participations.approvalStatus, 'APPROVED'),
+        eq(pots.status, 'ORDERED'),
+      ),
+    )
+
+  return cnt
+}
+
+/**
+ * pot이 ORDERED이고 viewer가 호스트 또는 승인된 참여자일 때, 평가 가능한 상대 목록을 반환한다.
+ * 관계는 문서 §7대로 호스트↔각 참여자로 한정 — 참여자끼리는 평가 대상이 아니다.
+ */
+export async function getMannerReviewTargets(potId: string, viewerId: string): Promise<MannerReviewTarget[]> {
+  const db = getDb()
+
+  const [pot] = await db
+    .select({ hostId: pots.hostId, status: pots.status, deadlineAt: pots.deadlineAt })
+    .from(pots)
+    .where(eq(pots.id, potId))
+    .limit(1)
+  if (!pot) return []
+  if (computeEffectiveStatus(pot.status, pot.deadlineAt) !== 'ORDERED') return []
+
+  const isHost = viewerId === pot.hostId
+  if (!isHost) {
+    const [membership] = await db
+      .select({ id: participations.id })
+      .from(participations)
+      .where(
+        and(
+          eq(participations.potId, potId),
+          eq(participations.userId, viewerId),
+          eq(participations.approvalStatus, 'APPROVED'),
+        ),
+      )
+      .limit(1)
+    if (!membership) return []
+  }
+
+  const reviewedRows = await db
+    .select({ revieweeId: mannerReviews.revieweeId })
+    .from(mannerReviews)
+    .where(and(eq(mannerReviews.potId, potId), eq(mannerReviews.reviewerId, viewerId)))
+  const reviewed = new Set(reviewedRows.map((r) => r.revieweeId))
+
+  if (isHost) {
+    const rows = await db
+      .select({ userId: participations.userId, nickname: users.nickname })
+      .from(participations)
+      .innerJoin(users, eq(participations.userId, users.id))
+      .where(
+        and(
+          eq(participations.potId, potId),
+          eq(participations.approvalStatus, 'APPROVED'),
+          ne(participations.userId, pot.hostId),
+        ),
+      )
+    return rows.map((r) => ({
+      userId: r.userId,
+      nickname: r.nickname,
+      role: 'PARTICIPANT' as const,
+      alreadyReviewed: reviewed.has(r.userId),
+    }))
+  }
+
+  const [host] = await db.select({ nickname: users.nickname }).from(users).where(eq(users.id, pot.hostId)).limit(1)
+  if (!host) return []
+  return [{ userId: pot.hostId, nickname: host.nickname, role: 'HOST' as const, alreadyReviewed: reviewed.has(pot.hostId) }]
+}
+
+/** 다른 사용자 프로필 화면(§12-2)용 — 닉네임 + 매너 포만도 + 완료한 공동주문 횟수. */
+export async function getUserPublicProfile(
+  userId: string,
+): Promise<{ id: string; nickname: string; manner: MannerProfile; completedPotCount: number } | null> {
+  const db = getDb()
+  const [user] = await db.select({ nickname: users.nickname }).from(users).where(eq(users.id, userId)).limit(1)
+  if (!user) return null
+
+  const [manner, completedPotCount] = await Promise.all([
+    getMannerProfile(userId),
+    getUserCompletedPotCount(userId),
+  ])
+
+  return { id: userId, nickname: user.nickname, manner, completedPotCount }
+}
+
+export type SubmitMannerReviewResult =
+  | { ok: true }
+  | { ok: false; code: 'NOT_FOUND' | 'FORBIDDEN' | 'DUPLICATE' | 'INVALID_TAGS'; message: string }
+
+/** 문서 §7의 모든 평가 가능 조건(로그인/완료상태/승인관계/자기자신아님/중복없음/7일이내)을 검사한 뒤 insert한다. */
+export async function submitMannerReview(
+  potId: string,
+  reviewerId: string,
+  revieweeId: string,
+  rating: MannerRating,
+  tags: string[],
+): Promise<SubmitMannerReviewResult> {
+  if (reviewerId === revieweeId) {
+    return { ok: false, code: 'FORBIDDEN', message: '자기 자신은 평가할 수 없습니다.' }
+  }
+
+  const allowedTags = MANNER_TAGS_BY_RATING[rating]
+  if (!Array.isArray(tags) || tags.some((t) => !allowedTags.includes(t))) {
+    return { ok: false, code: 'INVALID_TAGS', message: '올바르지 않은 평가 태그입니다.' }
+  }
+
+  const db = getDb()
+  const [pot] = await db
+    .select({ hostId: pots.hostId, status: pots.status, deadlineAt: pots.deadlineAt, orderedAt: pots.orderedAt })
+    .from(pots)
+    .where(eq(pots.id, potId))
+    .limit(1)
+  if (!pot) return { ok: false, code: 'NOT_FOUND', message: '존재하지 않는 공동주문입니다.' }
+
+  if (computeEffectiveStatus(pot.status, pot.deadlineAt) !== 'ORDERED' || !pot.orderedAt) {
+    return { ok: false, code: 'FORBIDDEN', message: '주문이 완료된 이후에만 평가할 수 있습니다.' }
+  }
+  if (Date.now() - pot.orderedAt.getTime() > MANNER_REVIEW_WINDOW_MS) {
+    return { ok: false, code: 'FORBIDDEN', message: '평가 가능 기간(완료 후 7일)이 지났습니다.' }
+  }
+
+  const isReviewerHost = reviewerId === pot.hostId
+  const isRevieweeHost = revieweeId === pot.hostId
+  if (isReviewerHost === isRevieweeHost) {
+    // 둘 다 호스트이거나 둘 다 참여자면 허용되지 않는 관계 (§7: 참여자끼리 평가는 MVP 제외)
+    return { ok: false, code: 'FORBIDDEN', message: '호스트와 승인된 참여자 사이에서만 평가할 수 있습니다.' }
+  }
+
+  const relevantUserId = isReviewerHost ? revieweeId : reviewerId
+  const [membership] = await db
+    .select({ id: participations.id })
+    .from(participations)
+    .where(
+      and(
+        eq(participations.potId, potId),
+        eq(participations.userId, relevantUserId),
+        eq(participations.approvalStatus, 'APPROVED'),
+      ),
+    )
+    .limit(1)
+  if (!membership) {
+    return { ok: false, code: 'FORBIDDEN', message: '이 공동주문의 호스트/승인된 참여자만 평가할 수 있습니다.' }
+  }
+
+  const now = new Date()
+  try {
+    await db.insert(mannerReviews).values({
+      potId,
+      reviewerId,
+      revieweeId,
+      rating,
+      tags,
+      visibleAfter: mannerReviewVisibleAfter(now),
+      createdAt: now,
+    })
+  } catch (err) {
+    if (getPgErrorCode(err) === '23505') {
+      return { ok: false, code: 'DUPLICATE', message: '이미 이 상대를 평가했습니다.' }
+    }
+    throw err
+  }
+
+  return { ok: true }
 }

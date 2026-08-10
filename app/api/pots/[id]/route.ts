@@ -74,7 +74,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ pot })
   }
 
-  await db.update(pots).set({ status: nextStatus }).where(eq(pots.id, id))
+  await db
+    .update(pots)
+    .set({ status: nextStatus, ...(nextStatus === 'ORDERED' ? { orderedAt: new Date() } : {}) })
+    .where(eq(pots.id, id))
 
   const systemMessage = STATUS_SYSTEM_MESSAGE[nextStatus]
   if (systemMessage) {
@@ -99,7 +102,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         type: 'POT_COMPLETED',
         potId: id,
         title: '공동주문이 완료되었어요',
-        body: `${row.storeName} 공동주문이 완료 처리되었어요.`,
+        body: `${row.storeName} 공동주문이 완료 처리되었어요. 함께한 메이트를 평가해보세요.`,
         actionPath: `/pots/${id}`,
         dedupeKey: `POT_COMPLETED:${id}:${uid}`,
       })),

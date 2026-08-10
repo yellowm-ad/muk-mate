@@ -36,6 +36,20 @@
       "when": 1785399717374,
       "tag": "0004_clean_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786360407650,
+      "tag": "0005_stiff_wolfsbane",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786360708873,
+      "tag": "0006_worthless_mach_iv",
+      "breakpoints": true
     }
   ]
 }

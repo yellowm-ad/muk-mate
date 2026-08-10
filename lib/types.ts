@@ -146,6 +146,31 @@ export interface Place {
   lng: number
 }
 
+/** 매너 포만도(PRD §17-5) 평가 3단계 */
+export type MannerRating = 'GOOD' | 'NEUTRAL' | 'BAD'
+
+/** 매너 포만도 단계 — reviewCount < 3이면 점수와 무관하게 'NEW' (문서 §4-1, §5) */
+export type MannerStage = 'NEW' | 'HUNGRY' | 'PECKISH' | 'FULL' | 'HAPPY' | 'DELIGHTED'
+
+export interface MannerProfile {
+  userId: string
+  /** reviewCount < 3이면 비공개 — null (문서 §4-1 공개 조건) */
+  score: number | null
+  reviewCount: number
+  positiveCount: number
+  negativeCount: number
+  stage: MannerStage
+}
+
+/** 매너 평가 화면(문서 §12-3)에서 보여줄, 평가 가능한 상대 1명 */
+export interface MannerReviewTarget {
+  userId: string
+  nickname: string
+  /** 방장 본인이 참여자를 평가하는 관계인지, 참여자가 방장을 평가하는 관계인지 */
+  role: 'HOST' | 'PARTICIPANT'
+  alreadyReviewed: boolean
+}
+
 export type NotificationType =
   | 'APPLICATION_SUBMITTED'
   | 'APPLICATION_RECEIVED'

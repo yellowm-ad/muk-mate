@@ -1,6 +1,7 @@
 'use client'
 
 import { ArrowLeft, Check, Clock, MapPin, Share2, ShieldCheck, Trash2, Truck, Users } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
@@ -179,6 +180,19 @@ export function PotDetailView({
         </div>
       </section>
 
+      {/* 매너 평가 진입 배너 (§17-5) — 주문 완료 후 호스트/승인된 참여자에게만 노출 */}
+      {pot.status === 'ORDERED' && (isHost || viewerState === 'MEMBER') && (
+        <section className="px-4 pt-2">
+          <Link
+            href={`/pots/${pot.id}/manner`}
+            className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm font-bold text-primary transition active:scale-[0.99] hover:bg-primary/10"
+          >
+            함께한 메이트를 평가해보세요
+            <span aria-hidden>→</span>
+          </Link>
+        </section>
+      )}
+
       {/* 방장용 참여 신청 목록 섹션 */}
       {isHost && (
         <RequestList
@@ -291,7 +305,9 @@ export function PotDetailView({
             <StoreAvatar name={pot.hostNickname} className="size-9 text-sm" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">
-                {pot.hostNickname}
+                <Link href={`/users/${pot.hostId}`} className="hover:underline">
+                  {pot.hostNickname}
+                </Link>
                 <span className="ml-1.5 rounded-full bg-primary-soft px-1.5 py-0.5 text-xs font-bold text-primary">
                   주최자
                 </span>
@@ -303,7 +319,11 @@ export function PotDetailView({
             <li key={p.id} className="flex items-center gap-3">
               <StoreAvatar name={p.nickname} className="size-9 text-sm" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-foreground">{p.nickname}</p>
+                <p className="truncate text-sm font-semibold text-foreground">
+                  <Link href={`/users/${p.userId}`} className="hover:underline">
+                    {p.nickname}
+                  </Link>
+                </p>
                 {p.applyMessage && (
                   <p className="truncate text-xs text-muted-foreground">{p.applyMessage}</p>
                 )}

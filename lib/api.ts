@@ -5,7 +5,19 @@
 // 빌드가 깨진다. 서버 컴포넌트가 필요로 하는 조회는 lib/server-data.ts를 쓴다.
 //
 // ─────────────────────────────────────────────────────────────
-import type { AppNotification, Message, Participation, Place, Pot, PotStatus, RoomReadEntry, ZoneCode } from '@/lib/types'
+import type {
+  AppNotification,
+  MannerProfile,
+  MannerRating,
+  MannerReviewTarget,
+  Message,
+  Participation,
+  Place,
+  Pot,
+  PotStatus,
+  RoomReadEntry,
+  ZoneCode,
+} from '@/lib/types'
 
 async function parseJsonResponse<T>(res: Response): Promise<T> {
   const data = await res.json().catch(() => null)
@@ -249,6 +261,40 @@ export async function markNotificationAsRead(id: number): Promise<void> {
 export async function markAllNotificationsAsRead(): Promise<void> {
   const res = await fetch('/api/notifications/read-all', {
     method: 'PATCH',
+  })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
+/** 내 매너 포만도 조회 — GET /api/me/manner (§17-5) */
+export async function getMyManner(): Promise<MannerProfile> {
+  const res = await fetch('/api/me/manner')
+  const data = await parseJsonResponse<{ manner: MannerProfile }>(res)
+  return data.manner
+}
+
+/** 다른 사용자의 공개 매너 정보 조회 — GET /api/users/:id/manner (§17-5) */
+export async function getUserManner(userId: string): Promise<MannerProfile> {
+  const res = await fetch(`/api/users/${userId}/manner`)
+  const data = await parseJsonResponse<{ manner: MannerProfile }>(res)
+  return data.manner
+}
+
+/** 매너평가 가능 대상과 작성 여부 조회 — GET /api/pots/:id/manner-review-status (§17-5) */
+export async function getMannerReviewStatus(potId: string): Promise<MannerReviewTarget[]> {
+  const res = await fetch(`/api/pots/${potId}/manner-review-status`)
+  const data = await parseJsonResponse<{ targets: MannerReviewTarget[] }>(res)
+  return data.targets
+}
+
+/** 매너평가 제출 — POST /api/pots/:id/manner-reviews (§17-5). 점수 변화량은 서버가 결정한다. */
+export async function submitMannerReview(
+  potId: string,
+  input: { revieweeId: string; rating: MannerRating; tags: string[] },
+): Promise<void> {
+  const res = await fetch(`/api/pots/${potId}/manner-reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
   })
   await parseJsonResponse<{ ok: true }>(res)
 }

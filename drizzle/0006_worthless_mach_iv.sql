@@ -1,0 +1,1 @@
+ALTER TABLE "pots" ADD COLUMN "ordered_at" timestamp with time zone;
