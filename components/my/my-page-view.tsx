@@ -355,6 +355,17 @@ export function MyPageView({
         <h2 className="text-sm font-bold text-muted-foreground">계정 관리</h2>
         <div className="flex flex-col divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
           <Link
+            href="/my/friends"
+            className="flex h-12 items-center justify-between px-4 text-sm font-semibold text-foreground transition hover:bg-muted/50 active:bg-muted"
+          >
+            <div className="flex items-center gap-2.5">
+              <Users className="size-4 text-muted-foreground" />
+              <span>친구 관리</span>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </Link>
+
+          <Link
             href="/my/edit"
             className="flex h-12 items-center justify-between px-4 text-sm font-semibold text-foreground transition hover:bg-muted/50 active:bg-muted"
           >

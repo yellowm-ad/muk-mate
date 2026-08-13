@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, asc, count, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
@@ -9,6 +9,7 @@ import { REMEMBER_GUARD_COOKIE } from '@/lib/auth-constants'
 import { getDb, getPgErrorCode } from '@/lib/db'
 import {
   chatRooms,
+  friendRequests,
   mannerEvents,
   mannerProfiles,
   mannerReviews,
@@ -18,14 +19,18 @@ import {
   participations,
   pots,
   roomReads,
+  userBlocks,
   users,
 } from '@/lib/db/schema'
 import { formatDateTime } from '@/lib/format'
-import { createNotificationBulk } from '@/lib/notifications'
+import { createNotification, createNotificationBulk } from '@/lib/notifications'
 import { resolveViewerState } from '@/lib/pots/viewer-state'
 import type {
   AppNotification,
   ChatRoom,
+  FriendRequestSummary,
+  FriendshipStatus,
+  FriendSummary,
   MannerAvatarAccessory,
   MannerAvatarColor,
   MannerAvatarInfo,
@@ -740,7 +745,27 @@ export async function listRoomsForUser(userId: string): Promise<ChatRoom[]> {
     .where(eq(chatRooms.type, 'COMMUNITY'))
     .orderBy(asc(chatRooms.createdAt))
 
-  const allRoomIds = [...orderRoomsRaw.map((r) => r.id), ...communityRoomsRaw.map((r) => r.id)]
+  // 친구 DM(신규) — 상대방 닉네임을 방 제목으로 그때그때 덮어써서 보여준다(닉네임 변경에도 항상 최신값).
+  const dmRoomsRaw = await db
+    .select({ id: chatRooms.id, dmUserAId: chatRooms.dmUserAId, dmUserBId: chatRooms.dmUserBId })
+    .from(chatRooms)
+    .where(and(eq(chatRooms.type, 'DM'), or(eq(chatRooms.dmUserAId, userId), eq(chatRooms.dmUserBId, userId))))
+    .orderBy(desc(chatRooms.createdAt))
+
+  const otherUserIds = dmRoomsRaw
+    .map((r) => (r.dmUserAId === userId ? r.dmUserBId : r.dmUserAId))
+    .filter((id): id is string => Boolean(id))
+  const otherUsers =
+    otherUserIds.length > 0
+      ? await db.select({ id: users.id, nickname: users.nickname }).from(users).where(inArray(users.id, otherUserIds))
+      : []
+  const otherUserNicknameMap = new Map(otherUsers.map((u) => [u.id, u.nickname]))
+
+  const allRoomIds = [
+    ...orderRoomsRaw.map((r) => r.id),
+    ...communityRoomsRaw.map((r) => r.id),
+    ...dmRoomsRaw.map((r) => r.id),
+  ]
   const lastMessages = await getLastMessagesForRooms(allRoomIds)
   const unreadCounts = await getUnreadCountsForRooms(allRoomIds, userId)
 
@@ -772,7 +797,22 @@ export async function listRoomsForUser(userId: string): Promise<ChatRoom[]> {
     }
   })
 
-  return [...orderRooms, ...communityRooms]
+  const dmRooms: ChatRoom[] = dmRoomsRaw.map((r) => {
+    const otherUserId = r.dmUserAId === userId ? r.dmUserBId : r.dmUserAId
+    const last = lastMessages.get(r.id)
+    return {
+      id: r.id,
+      type: 'DM',
+      potId: null,
+      title: (otherUserId && otherUserNicknameMap.get(otherUserId)) || '알 수 없는 사용자',
+      otherUserId: otherUserId ?? undefined,
+      lastMessage: last?.content ?? '',
+      lastMessageAt: last?.createdAt.toISOString() ?? '',
+      unreadCount: unreadCounts.get(r.id) ?? 0,
+    }
+  })
+
+  return [...orderRooms, ...dmRooms, ...communityRooms]
 }
 
 /**
@@ -790,6 +830,26 @@ export async function getRoomForViewer(roomId: string, viewerId: string | undefi
 
   if (room.type === 'COMMUNITY') {
     return { id: room.id, type: 'COMMUNITY', title: room.title }
+  }
+
+  if (room.type === 'DM') {
+    if (room.dmUserAId !== viewerId && room.dmUserBId !== viewerId) return null
+    const otherUserId = room.dmUserAId === viewerId ? room.dmUserBId : room.dmUserAId
+    if (!otherUserId) return null
+
+    const [other] = await db.select({ nickname: users.nickname }).from(users).where(eq(users.id, otherUserId)).limit(1)
+    if (!other) return null
+
+    const [isFriend, isBlockedByMe] = await Promise.all([
+      areFriends(viewerId, otherUserId),
+      isBlocked(viewerId, otherUserId),
+    ])
+    return {
+      id: room.id,
+      type: 'DM',
+      title: other.nickname,
+      dm: { otherUserId, otherNickname: other.nickname, isFriend, isBlockedByMe },
+    }
   }
 
   if (!room.potId) return null
@@ -1396,4 +1456,394 @@ export async function getCompletedPotCount(userId: string): Promise<number> {
       ),
     )
   return cnt
+}
+
+// ─────────────────────────────────────────────────────────────
+// 친구 기능(신규) — "이미 한번 같이 모집한 사람들이 편하게 다시 모일 수 있게" 하는 것이 목적이라
+// 친구 신청은 같은 공동주문에 함께(둘 다 APPROVED로) 참여했던 사이에서만 허용한다. 낯선 사람과의
+// 오픈 DM은 금지 — DM방도 친구 사이에서만 새로 만들 수 있다(한번 만들어지면 이후 삭제해도 방 자체는
+// 남는다, 아래 getOrCreateDmRoom 참고).
+// ─────────────────────────────────────────────────────────────
+
+/** 두 유저가 같은 공동주문에 함께(둘 다 APPROVED로) 참여한 적이 있는지 — 친구 신청 자격 검증용 */
+async function haveSharedPot(userAId: string, userBId: string): Promise<boolean> {
+  const db = getDb()
+  const potsA = await db
+    .select({ potId: participations.potId })
+    .from(participations)
+    .where(and(eq(participations.userId, userAId), eq(participations.approvalStatus, 'APPROVED')))
+  if (potsA.length === 0) return false
+
+  const potIdsA = new Set(potsA.map((p) => p.potId))
+  const potsB = await db
+    .select({ potId: participations.potId })
+    .from(participations)
+    .where(and(eq(participations.userId, userBId), eq(participations.approvalStatus, 'APPROVED')))
+
+  return potsB.some((p) => potIdsA.has(p.potId))
+}
+
+/** userAId → userBId 방향의 차단이 있는지 (방향성 있음 — §친구 기능, 차단당한 쪽만 전송 불가) */
+async function isBlocked(blockerId: string, blockedId: string): Promise<boolean> {
+  const db = getDb()
+  const [row] = await db
+    .select({ id: userBlocks.id })
+    .from(userBlocks)
+    .where(and(eq(userBlocks.blockerId, blockerId), eq(userBlocks.blockedId, blockedId)))
+    .limit(1)
+  return Boolean(row)
+}
+
+async function isBlockedEitherWay(userAId: string, userBId: string): Promise<boolean> {
+  const [aBlockedB, bBlockedA] = await Promise.all([isBlocked(userAId, userBId), isBlocked(userBId, userAId)])
+  return aBlockedB || bBlockedA
+}
+
+async function findFriendRequestRow(userAId: string, userBId: string) {
+  const db = getDb()
+  const [row] = await db
+    .select()
+    .from(friendRequests)
+    .where(
+      or(
+        and(eq(friendRequests.requesterId, userAId), eq(friendRequests.addresseeId, userBId)),
+        and(eq(friendRequests.requesterId, userBId), eq(friendRequests.addresseeId, userAId)),
+      ),
+    )
+    .limit(1)
+  return row
+}
+
+async function areFriends(userAId: string, userBId: string): Promise<boolean> {
+  const row = await findFriendRequestRow(userAId, userBId)
+  return row?.status === 'ACCEPTED'
+}
+
+/** 프로필 화면 등에서 어떤 액션 버튼을 보여줄지 판단 */
+export async function getFriendshipStatus(viewerId: string, otherUserId: string): Promise<FriendshipStatus> {
+  if (viewerId === otherUserId) return 'NONE'
+
+  const [blockedByMe, blockedByThem] = await Promise.all([
+    isBlocked(viewerId, otherUserId),
+    isBlocked(otherUserId, viewerId),
+  ])
+  if (blockedByMe) return 'BLOCKED_BY_ME'
+  if (blockedByThem) return 'BLOCKED_BY_THEM'
+
+  const row = await findFriendRequestRow(viewerId, otherUserId)
+  if (!row) return 'NONE'
+  if (row.status === 'ACCEPTED') return 'FRIEND'
+  return row.requesterId === viewerId ? 'PENDING_OUT' : 'PENDING_IN'
+}
+
+/** 프로필 화면용 — 관계 상태 + "친구 신청" 버튼을 보여줘도 되는지(같은 공동주문을 함께한 사이인지) */
+export async function getFriendshipContext(
+  viewerId: string,
+  otherUserId: string,
+): Promise<{ status: FriendshipStatus; canRequest: boolean; requestId?: string }> {
+  const status = await getFriendshipStatus(viewerId, otherUserId)
+  if (status === 'PENDING_IN') {
+    const row = await findFriendRequestRow(viewerId, otherUserId)
+    return { status, canRequest: false, requestId: row?.id }
+  }
+  const canRequest = status === 'NONE' && (await haveSharedPot(viewerId, otherUserId))
+  return { status, canRequest }
+}
+
+/** 마이페이지 "친구 목록" 탭 */
+export async function listFriends(userId: string): Promise<FriendSummary[]> {
+  const db = getDb()
+  const rows = await db
+    .select({
+      id: friendRequests.id,
+      requesterId: friendRequests.requesterId,
+      addresseeId: friendRequests.addresseeId,
+      requesterNickname: users.nickname, // placeholder, overwritten below per-row
+    })
+    .from(friendRequests)
+    .innerJoin(users, eq(users.id, friendRequests.requesterId))
+    .where(
+      and(
+        eq(friendRequests.status, 'ACCEPTED'),
+        or(eq(friendRequests.requesterId, userId), eq(friendRequests.addresseeId, userId)),
+      ),
+    )
+
+  const otherUserIds = rows.map((r) => (r.requesterId === userId ? r.addresseeId : r.requesterId))
+  if (otherUserIds.length === 0) return []
+
+  const otherUsers = await db.select({ id: users.id, nickname: users.nickname }).from(users).where(inArray(users.id, otherUserIds))
+  const nicknameMap = new Map(otherUsers.map((u) => [u.id, u.nickname]))
+  const mannerMap = await getMannerAvatarsForUsers(otherUserIds)
+
+  return rows.map((r) => {
+    const otherUserId = r.requesterId === userId ? r.addresseeId : r.requesterId
+    return {
+      friendRequestId: r.id,
+      userId: otherUserId,
+      nickname: nicknameMap.get(otherUserId) ?? '',
+      manner: mannerMap.get(otherUserId),
+    }
+  })
+}
+
+/** 마이페이지 "친구 신청" 탭 — 내가 받은 대기 중인 신청만 */
+export async function listIncomingFriendRequests(userId: string): Promise<FriendRequestSummary[]> {
+  const db = getDb()
+  const rows = await db
+    .select({
+      id: friendRequests.id,
+      requesterId: friendRequests.requesterId,
+      requesterNickname: users.nickname,
+      createdAt: friendRequests.createdAt,
+    })
+    .from(friendRequests)
+    .innerJoin(users, eq(users.id, friendRequests.requesterId))
+    .where(and(eq(friendRequests.addresseeId, userId), eq(friendRequests.status, 'PENDING')))
+    .orderBy(desc(friendRequests.createdAt))
+
+  const mannerMap = await getMannerAvatarsForUsers(rows.map((r) => r.requesterId))
+
+  return rows.map((r) => ({
+    requestId: r.id,
+    userId: r.requesterId,
+    nickname: r.requesterNickname,
+    manner: mannerMap.get(r.requesterId),
+    createdAt: r.createdAt.toISOString(),
+  }))
+}
+
+export type SendFriendRequestResult =
+  | { ok: true; status: 'PENDING' | 'ACCEPTED' }
+  | { ok: false; code: 'SELF' | 'NOT_ELIGIBLE' | 'BLOCKED' | 'ALREADY_FRIENDS' | 'ALREADY_PENDING'; error: string }
+
+/**
+ * 친구 신청 — 같은 공동주문에 함께 참여했던 사이만 가능(§친구 기능, 낯선 사람과의 오픈 DM 방지).
+ * 상대가 이미 나에게 신청을 보내둔 상태라면 새로 만들지 않고 바로 수락 처리한다.
+ */
+export async function sendFriendRequest(requesterId: string, addresseeId: string): Promise<SendFriendRequestResult> {
+  if (requesterId === addresseeId) {
+    return { ok: false, code: 'SELF', error: '자기 자신에게는 친구 신청을 보낼 수 없습니다.' }
+  }
+
+  if (await isBlockedEitherWay(requesterId, addresseeId)) {
+    return { ok: false, code: 'BLOCKED', error: '차단 관계가 있어 친구 신청을 보낼 수 없습니다.' }
+  }
+
+  if (!(await haveSharedPot(requesterId, addresseeId))) {
+    return { ok: false, code: 'NOT_ELIGIBLE', error: '함께 공동주문에 참여했던 사이만 친구 신청을 보낼 수 있어요.' }
+  }
+
+  const db = getDb()
+  const existing = await findFriendRequestRow(requesterId, addresseeId)
+
+  if (existing) {
+    if (existing.status === 'ACCEPTED') {
+      return { ok: false, code: 'ALREADY_FRIENDS', error: '이미 친구예요.' }
+    }
+    if (existing.requesterId === requesterId) {
+      return { ok: false, code: 'ALREADY_PENDING', error: '이미 신청을 보냈어요. 상대의 응답을 기다려주세요.' }
+    }
+    // 상대가 이미 나에게 신청해둔 상태 → 내가 신청하는 순간 서로 원하는 것이므로 바로 수락 처리
+    await db.update(friendRequests).set({ status: 'ACCEPTED', respondedAt: new Date() }).where(eq(friendRequests.id, existing.id))
+    const me = await getPublicUserProfile(requesterId)
+    await createNotification(db, {
+      recipientId: addresseeId,
+      type: 'FRIEND_REQUEST_ACCEPTED',
+      title: '친구가 되었어요',
+      body: `${me?.nickname ?? '상대방'}님과 친구가 되었어요.`,
+      actionPath: '/my/friends',
+      dedupeKey: `FRIEND_REQUEST_ACCEPTED:${existing.id}:${addresseeId}`,
+    })
+    return { ok: true, status: 'ACCEPTED' }
+  }
+
+  const [row] = await db.insert(friendRequests).values({ requesterId, addresseeId }).returning()
+  const me = await getPublicUserProfile(requesterId)
+  await createNotification(db, {
+    recipientId: addresseeId,
+    type: 'FRIEND_REQUEST_RECEIVED',
+    title: '친구 신청이 도착했어요',
+    body: `${me?.nickname ?? '누군가'}님이 친구 신청을 보냈어요.`,
+    actionPath: '/my/friends',
+    dedupeKey: `FRIEND_REQUEST_RECEIVED:${row.id}`,
+  })
+  return { ok: true, status: 'PENDING' }
+}
+
+export type RespondFriendRequestResult =
+  | { ok: true }
+  | { ok: false; code: 'NOT_FOUND' | 'FORBIDDEN' | 'NOT_PENDING'; error: string }
+
+/** 친구 신청 수락/거절 — 거절은 행 자체를 지운다(나중에 다시 신청 가능하게). */
+export async function respondToFriendRequest(
+  requestId: string,
+  viewerId: string,
+  action: 'accept' | 'reject',
+): Promise<RespondFriendRequestResult> {
+  const db = getDb()
+  const [row] = await db.select().from(friendRequests).where(eq(friendRequests.id, requestId)).limit(1)
+  if (!row) return { ok: false, code: 'NOT_FOUND', error: '존재하지 않는 친구 신청입니다.' }
+  if (row.addresseeId !== viewerId) return { ok: false, code: 'FORBIDDEN', error: '내가 받은 신청만 처리할 수 있습니다.' }
+  if (row.status !== 'PENDING') return { ok: false, code: 'NOT_PENDING', error: '이미 처리된 신청입니다.' }
+
+  if (action === 'reject') {
+    await db.delete(friendRequests).where(eq(friendRequests.id, requestId))
+    return { ok: true }
+  }
+
+  await db.update(friendRequests).set({ status: 'ACCEPTED', respondedAt: new Date() }).where(eq(friendRequests.id, requestId))
+  const me = await getPublicUserProfile(viewerId)
+  await createNotification(db, {
+    recipientId: row.requesterId,
+    type: 'FRIEND_REQUEST_ACCEPTED',
+    title: '친구가 되었어요',
+    body: `${me?.nickname ?? '상대방'}님과 친구가 되었어요.`,
+    actionPath: '/my/friends',
+    dedupeKey: `FRIEND_REQUEST_ACCEPTED:${requestId}`,
+  })
+  return { ok: true }
+}
+
+/** 친구 삭제 — 메신저 제한은 없고, 이후 이 사람이 보내는 DM에는 배너로 "친구로 등록되지 않은
+ *  사용자입니다"만 뜬다(§친구 기능). 다시 신청하면 새로 친구가 될 수 있도록 행을 지운다. */
+export async function unfriend(userId: string, otherUserId: string): Promise<void> {
+  const db = getDb()
+  const row = await findFriendRequestRow(userId, otherUserId)
+  if (row && row.status === 'ACCEPTED') {
+    await db.delete(friendRequests).where(eq(friendRequests.id, row.id))
+  }
+}
+
+/** 차단 — 기존 친구 관계도 함께 끊는다. 차단당한 쪽만 나에게 메시지를 보낼 수 없게 된다. */
+export async function blockUser(blockerId: string, blockedId: string): Promise<void> {
+  if (blockerId === blockedId) return
+  const db = getDb()
+  await db.insert(userBlocks).values({ blockerId, blockedId }).onConflictDoNothing()
+
+  const row = await findFriendRequestRow(blockerId, blockedId)
+  if (row) {
+    await db.delete(friendRequests).where(eq(friendRequests.id, row.id))
+  }
+}
+
+export async function unblockUser(blockerId: string, blockedId: string): Promise<void> {
+  const db = getDb()
+  await db.delete(userBlocks).where(and(eq(userBlocks.blockerId, blockerId), eq(userBlocks.blockedId, blockedId)))
+}
+
+/** 마이페이지 "차단 목록" — 친구 화면 안에서 같이 관리 */
+export async function listBlockedUsers(userId: string): Promise<FriendSummary[]> {
+  const db = getDb()
+  const rows = await db
+    .select({ id: userBlocks.id, blockedId: userBlocks.blockedId, nickname: users.nickname })
+    .from(userBlocks)
+    .innerJoin(users, eq(users.id, userBlocks.blockedId))
+    .where(eq(userBlocks.blockerId, userId))
+
+  const mannerMap = await getMannerAvatarsForUsers(rows.map((r) => r.blockedId))
+  return rows.map((r) => ({
+    friendRequestId: r.id,
+    userId: r.blockedId,
+    nickname: r.nickname,
+    manner: mannerMap.get(r.blockedId),
+  }))
+}
+
+export type GetOrCreateDmRoomResult =
+  | { ok: true; roomId: string }
+  | { ok: false; code: 'NOT_FRIENDS'; error: string }
+
+/**
+ * 친구 DM방 조회 또는 생성 — 방을 새로 "여는" 것(메시지 보내기 버튼)은 친구 사이에서만 가능하다.
+ * 한번 만들어진 방은 이후 친구를 삭제해도 없어지지 않는다 — 삭제당한 상대가 다시 말 걸 때 배너로만
+ * 안내한다(§친구 기능). dmUserAId < dmUserBId로 정렬해 저장해 같은 쌍에 방이 중복 생성되지 않는다.
+ */
+export async function getOrCreateDmRoom(userAId: string, userBId: string): Promise<GetOrCreateDmRoomResult> {
+  const db = getDb()
+  const [lo, hi] = userAId < userBId ? [userAId, userBId] : [userBId, userAId]
+
+  const [existing] = await db
+    .select({ id: chatRooms.id })
+    .from(chatRooms)
+    .where(and(eq(chatRooms.type, 'DM'), eq(chatRooms.dmUserAId, lo), eq(chatRooms.dmUserBId, hi)))
+    .limit(1)
+  if (existing) return { ok: true, roomId: existing.id }
+
+  if (!(await areFriends(userAId, userBId))) {
+    return { ok: false, code: 'NOT_FRIENDS', error: '친구 사이에서만 메시지를 시작할 수 있어요.' }
+  }
+
+  const [created] = await db
+    .insert(chatRooms)
+    .values({ type: 'DM', dmUserAId: lo, dmUserBId: hi, title: '다이렉트 메시지' })
+    .onConflictDoNothing({ target: [chatRooms.dmUserAId, chatRooms.dmUserBId] })
+    .returning()
+
+  if (created) return { ok: true, roomId: created.id }
+
+  // 동시에 두 요청이 방을 만들려다 경합한 경우 — 방금 다른 요청이 만든 방을 다시 조회
+  const [raced] = await db
+    .select({ id: chatRooms.id })
+    .from(chatRooms)
+    .where(and(eq(chatRooms.type, 'DM'), eq(chatRooms.dmUserAId, lo), eq(chatRooms.dmUserBId, hi)))
+    .limit(1)
+  if (raced) return { ok: true, roomId: raced.id }
+  throw new Error('Failed to create or find DM room')
+}
+
+/** 메시지 전송 직전 차단 검사 — DM방에서 상대가 나를 차단했으면 전송을 막는다(§친구 기능). */
+export async function isSenderBlockedByRecipient(senderId: string, recipientId: string): Promise<boolean> {
+  return isBlocked(recipientId, senderId)
+}
+
+export type InvitePotFriendsResult =
+  | { ok: true; invitedCount: number }
+  | { ok: false; code: 'FORBIDDEN' | 'NOT_FOUND'; error: string }
+
+/**
+ * 모집방에 친구 초대 — 승인 없이 바로 참여시키지 않고, 초대 알림만 보낸다(§친구 기능). 친구가 아닌
+ * 유저 id가 섞여 들어와도 서버가 걸러서 실제 친구에게만 보낸다. 이미 참여(신청 포함)한 친구는 건너뛴다.
+ */
+export async function invitePotFriends(
+  potId: string,
+  hostId: string,
+  friendUserIds: string[],
+): Promise<InvitePotFriendsResult> {
+  const db = getDb()
+  const [pot] = await db.select({ hostId: pots.hostId, storeName: pots.storeName }).from(pots).where(eq(pots.id, potId)).limit(1)
+  if (!pot) return { ok: false, code: 'NOT_FOUND', error: '존재하지 않는 공동주문입니다.' }
+  if (pot.hostId !== hostId) return { ok: false, code: 'FORBIDDEN', error: '모집자만 친구를 초대할 수 있습니다.' }
+
+  const uniqueIds = [...new Set(friendUserIds)].filter((id) => id !== hostId)
+  if (uniqueIds.length === 0) return { ok: true, invitedCount: 0 }
+
+  const myFriends = await listFriends(hostId)
+  const friendIdSet = new Set(myFriends.map((f) => f.userId))
+  const eligibleIds = uniqueIds.filter((id) => friendIdSet.has(id))
+  if (eligibleIds.length === 0) return { ok: true, invitedCount: 0 }
+
+  const existingParticipations = await db
+    .select({ userId: participations.userId })
+    .from(participations)
+    .where(and(eq(participations.potId, potId), inArray(participations.userId, eligibleIds)))
+  const alreadyInPot = new Set(existingParticipations.map((p) => p.userId))
+  const toInvite = eligibleIds.filter((id) => !alreadyInPot.has(id))
+  if (toInvite.length === 0) return { ok: true, invitedCount: 0 }
+
+  const host = await getPublicUserProfile(hostId)
+  await createNotificationBulk(
+    db,
+    toInvite.map((uid) => ({
+      recipientId: uid,
+      type: 'POT_INVITED' as const,
+      potId,
+      title: '공동주문에 초대됐어요',
+      body: `${host?.nickname ?? '친구'}님이 ${pot.storeName} 공동주문에 초대했어요.`,
+      actionPath: `/pots/${potId}`,
+      dedupeKey: `POT_INVITED:${potId}:${uid}`,
+    })),
+  )
+
+  return { ok: true, invitedCount: toInvite.length }
 }

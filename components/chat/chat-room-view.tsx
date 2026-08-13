@@ -17,6 +17,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
+  UserMinus,
+  UserX,
 } from 'lucide-react'
 
 import { ReportModal } from '@/components/chat/report-modal'
@@ -30,7 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-import { deleteMessages, getMessages, sendMessage } from '@/lib/api'
+import { blockUser, deleteMessages, getMessages, removeFriend, sendMessage, unblockUser } from '@/lib/api'
 import { formatClock, formatDateDivider, formatDateTime, isSameDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Message, RoomAccess, RoomReadEntry } from '@/lib/types'
@@ -205,16 +207,42 @@ export function ChatRoomView({
     setReportModalOpen(true)
   }
 
-  // 사용자 신고 열기 (더보기 메뉴에서)
+  // 사용자 신고 열기 (더보기 메뉴에서) — DM방은 상대가 항상 정해져 있으니 메시지가 하나도 없어도 정확히 잡힌다.
   function openReportUser() {
     setMoreMenuOpen(false)
-    // 주최자 또는 상대방 닉네임 설정
+    if (room.dm) {
+      setReportTarget({ nickname: room.dm.otherNickname, userId: room.dm.otherUserId })
+      setReportModalOpen(true)
+      return
+    }
     const otherMsg = messages.find((m) => !m.isMine && m.senderId)
     setReportTarget({
       nickname: otherMsg?.senderNickname || '참여자',
       userId: otherMsg?.senderId || '',
     })
     setReportModalOpen(true)
+  }
+
+  // 친구 삭제 — 메신저 제한은 없고, 삭제 후 이 방을 다시 열면 "친구로 등록되지 않은" 배너만 뜬다.
+  async function handleUnfriend() {
+    if (!room.dm) return
+    if (!confirm(`${room.dm.otherNickname}님을 친구에서 삭제할까요?`)) return
+    setMoreMenuOpen(false)
+    await removeFriend(room.dm.otherUserId)
+    router.refresh()
+  }
+
+  // 차단/차단 해제 — 차단하면 상대가 나에게 더 이상 메시지를 보낼 수 없다.
+  async function handleToggleBlock() {
+    if (!room.dm) return
+    setMoreMenuOpen(false)
+    if (room.dm.isBlockedByMe) {
+      await unblockUser(room.dm.otherUserId)
+    } else {
+      if (!confirm(`${room.dm.otherNickname}님을 차단할까요? 친구 관계도 함께 해제돼요.`)) return
+      await blockUser(room.dm.otherUserId)
+    }
+    router.refresh()
   }
 
   // 채팅 삭제(선택 모드) — 더보기 메뉴에서 진입
@@ -343,6 +371,26 @@ export function ChatRoomView({
                     <Trash2 className="size-3.5 text-muted-foreground" />
                     채팅 삭제
                   </button>
+                  {room.dm?.isFriend && (
+                    <button
+                      type="button"
+                      onClick={handleUnfriend}
+                      className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted rounded-lg"
+                    >
+                      <UserMinus className="size-3.5 text-muted-foreground" />
+                      친구 삭제
+                    </button>
+                  )}
+                  {room.dm && (
+                    <button
+                      type="button"
+                      onClick={handleToggleBlock}
+                      className="flex items-center gap-2 px-3 py-2.5 text-left text-destructive hover:bg-destructive/10 rounded-lg"
+                    >
+                      <UserX className="size-3.5" />
+                      {room.dm.isBlockedByMe ? '차단 해제' : '차단하기'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={openReportUser}
@@ -385,7 +433,7 @@ export function ChatRoomView({
         </div>
       )}
 
-      {/* 3. 안내 배너 (§9-1, §6) */}
+      {/* 3. 안내 배너 (§9-1, §6, §친구 기능) */}
       {room.type === 'ORDER' ? (
         <div className="flex items-start gap-2 bg-primary/5 px-4 py-2 text-xs text-primary border-b border-primary/10">
           <ShieldCheck className="size-4 shrink-0 mt-0.5" />
@@ -393,6 +441,13 @@ export function ChatRoomView({
             안전한 조율을 위해 수령 장소와 시각을 확인하세요. 불쾌한 대화나 문제 발생 시 상대방 메시지를 신고할 수 있습니다.
           </p>
         </div>
+      ) : room.type === 'DM' ? (
+        !room.dm?.isFriend && (
+          <div className="flex items-start gap-2 bg-amber-50 px-4 py-2 text-xs text-amber-700 border-b border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900">
+            <ShieldAlert className="size-4 shrink-0 mt-0.5" />
+            <p className="leading-snug">친구로 등록되지 않은 사용자입니다.</p>
+          </div>
+        )
       ) : (
         <div className="flex items-start gap-2 bg-muted/60 px-4 py-2 text-xs text-muted-foreground border-b border-border">
           <Info className="size-4 shrink-0 mt-0.5" />

@@ -7,7 +7,7 @@ export type { ViewerState }
 export type PotStatus = 'OPEN' | 'CLOSED' | 'ORDERED' | 'CANCELED'
 export type Approval = 'PENDING' | 'APPROVED' | 'REJECTED'
 export type TargetType = 'HEADCOUNT' | 'AMOUNT'
-export type RoomType = 'ORDER' | 'COMMUNITY'
+export type RoomType = 'ORDER' | 'COMMUNITY' | 'DM'
 export type MessageType = 'TEXT' | 'SYSTEM'
 
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DISABLED'
@@ -115,6 +115,8 @@ export interface ChatRoom {
   lastMessage: string
   lastMessageAt: string
   unreadCount: number
+  /** DM방 전용 — 상대방 프로필로 이동할 때 필요 */
+  otherUserId?: string
 }
 
 export interface Message {
@@ -149,6 +151,15 @@ export interface RoomAccess {
     pickupName: string
     pickupAt: string
     status: PotStatus
+  }
+  /** DM방 전용 — 상대방 프로필 링크·차단/삭제 액션에 필요 */
+  dm?: {
+    otherUserId: string
+    otherNickname: string
+    /** 현재도 친구 관계인지 — 아니면 "친구로 등록되지 않은 사용자입니다" 배너를 보여준다 */
+    isFriend: boolean
+    /** 내가 상대를 차단했는지 — 더보기 메뉴의 "차단하기"/"차단 해제" 라벨 전환용 */
+    isBlockedByMe: boolean
   }
 }
 
@@ -213,6 +224,9 @@ export type NotificationType =
   | 'APPLICATION_REJECTED'
   | 'POT_COMPLETED'
   | 'POT_CANCELED'
+  | 'FRIEND_REQUEST_RECEIVED'
+  | 'FRIEND_REQUEST_ACCEPTED'
+  | 'POT_INVITED'
 
 export interface AppNotification {
   id: number
@@ -227,3 +241,35 @@ export interface AppNotification {
   readAt: string | null
   createdAt: string
 }
+
+// ─────────────────────────────────────────────────────────────
+// 친구 기능(신규) — 같은 공동주문에 함께 참여했던 사람끼리만 신청 가능(§친구 기능).
+// ─────────────────────────────────────────────────────────────
+
+export type FriendRequestStatus = 'PENDING' | 'ACCEPTED'
+
+/** 마이페이지 "친구 목록" 탭 항목 */
+export interface FriendSummary {
+  friendRequestId: string
+  userId: string
+  nickname: string
+  manner?: MannerAvatarInfo
+}
+
+/** 마이페이지 "친구 신청" 탭 항목 — 내가 받은 대기 중인 신청만 다룬다 */
+export interface FriendRequestSummary {
+  requestId: string
+  userId: string
+  nickname: string
+  manner?: MannerAvatarInfo
+  createdAt: string
+}
+
+/** 프로필 화면 등에서 "친구 신청/수락/메시지 보내기" 중 어떤 버튼을 보여줄지 판단하는 상태 */
+export type FriendshipStatus =
+  | 'FRIEND'
+  | 'PENDING_OUT' // 내가 신청을 보냈고 상대 응답 대기 중
+  | 'PENDING_IN' // 상대가 나에게 신청을 보냈음 — 바로 수락 가능
+  | 'BLOCKED_BY_ME'
+  | 'BLOCKED_BY_THEM'
+  | 'NONE'

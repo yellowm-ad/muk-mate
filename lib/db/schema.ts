@@ -21,7 +21,7 @@ import {
 
 export const potStatusEnum = pgEnum('pot_status', ['OPEN', 'CLOSED', 'ORDERED', 'CANCELED'])
 export const approvalEnum = pgEnum('approval', ['PENDING', 'APPROVED', 'REJECTED'])
-export const roomTypeEnum = pgEnum('room_type', ['ORDER', 'COMMUNITY'])
+export const roomTypeEnum = pgEnum('room_type', ['ORDER', 'COMMUNITY', 'DM'])
 export const messageTypeEnum = pgEnum('message_type', ['TEXT', 'SYSTEM'])
 export const targetTypeEnum = pgEnum('target_type', ['HEADCOUNT', 'AMOUNT'])
 export const accountStatusEnum = pgEnum('account_status', ['ACTIVE', 'SUSPENDED', 'DISABLED'])
@@ -44,8 +44,12 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'APPLICATION_REJECTED',
   'POT_COMPLETED',
   'POT_CANCELED',
+  'FRIEND_REQUEST_RECEIVED',
+  'FRIEND_REQUEST_ACCEPTED',
+  'POT_INVITED',
 ])
 export const mannerRatingEnum = pgEnum('manner_rating', ['GOOD', 'NEUTRAL', 'BAD'])
+export const friendRequestStatusEnum = pgEnum('friend_request_status', ['PENDING', 'ACCEPTED'])
 
 /** 활동 지역: 목록이 아직 미확정(PRD §17-1)이라 enum이 아니라 테이블로 분리 */
 export const zones = pgTable('zones', {
@@ -136,15 +140,23 @@ export const participations = pgTable(
   ],
 )
 
-export const chatRooms = pgTable('chat_rooms', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  type: roomTypeEnum('type').notNull(),
-  potId: uuid('pot_id')
-    .unique()
-    .references(() => pots.id, { onDelete: 'cascade' }), // ORDER일 때만
-  title: text('title').notNull(), // COMMUNITY 고정방 이름
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+export const chatRooms = pgTable(
+  'chat_rooms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    type: roomTypeEnum('type').notNull(),
+    potId: uuid('pot_id')
+      .unique()
+      .references(() => pots.id, { onDelete: 'cascade' }), // ORDER일 때만
+    title: text('title').notNull(), // COMMUNITY 고정방 이름. DM은 조회 시점에 상대방 닉네임으로 덮어써서 보여준다.
+    // 친구 DM(신규) 전용 — 두 유저 id를 항상 문자열 오름차순(작은 값이 A)으로 저장해 같은 쌍에 대해
+    // 방이 중복 생성되지 않도록 한다(unique index). ORDER/COMMUNITY는 둘 다 NULL.
+    dmUserAId: uuid('dm_user_a_id').references(() => users.id),
+    dmUserBId: uuid('dm_user_b_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('chat_rooms_dm_pair_key').on(table.dmUserAId, table.dmUserBId)],
+)
 
 export const messages = pgTable(
   'messages',
@@ -226,6 +238,47 @@ export const reports = pgTable(
     index('idx_reports_status_created').on(table.status, table.createdAt),
     uniqueIndex('idx_reports_duplicate_message').on(table.reporterId, table.messageId),
   ],
+)
+
+// 친구(신규) — 같은 공동주문에 함께 참여했던 사람끼리만 신청 가능(서버에서 검증, §친구 기능).
+// 수락 전에는 PENDING 한 행만 존재하고, 수락하면 그 행 자체가 ACCEPTED로 바뀐다(친구=ACCEPTED 행
+// 존재로 판정, 방향 무관하게 requesterId/addresseeId 양쪽에서 조회). 거절하면 행을 그냥 지운다 —
+// 나중에 다시 신청할 수 있어야 하기 때문(REJECTED 상태를 영구히 남기지 않음).
+export const friendRequests = pgTable(
+  'friend_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requesterId: uuid('requester_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    addresseeId: uuid('addressee_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: friendRequestStatusEnum('status').notNull().default('PENDING'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('friend_requests_pair_key').on(table.requesterId, table.addresseeId),
+    index('idx_friend_requests_addressee_status').on(table.addresseeId, table.status),
+  ],
+)
+
+// 차단(신규) — 방향성 있음(blockerId가 blockedId를 차단). 차단당한 쪽만 상대에게 메시지를 보낼 수
+// 없다(§친구 기능 — 다시 집적거리지 못하게 막는 게 목적). 차단하면 서버가 기존 친구 관계도 함께 끊는다.
+export const userBlocks = pgTable(
+  'user_blocks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    blockerId: uuid('blocker_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    blockedId: uuid('blocked_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('user_blocks_pair_key').on(table.blockerId, table.blockedId)],
 )
 
 export const notifications = pgTable(

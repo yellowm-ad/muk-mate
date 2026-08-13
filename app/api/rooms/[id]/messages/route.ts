@@ -10,6 +10,7 @@ import {
   getRoomForViewer,
   getRoomReads,
   getSessionUserOrNull,
+  isSenderBlockedByRecipient,
   markRoomRead,
 } from '@/lib/server-data'
 
@@ -88,6 +89,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const content = typeof body?.content === 'string' ? body.content.trim() : ''
   if (!content || content.length > CONTENT_MAX) {
     return NextResponse.json({ error: '메시지를 확인해 주세요.' }, { status: 400 })
+  }
+
+  // 친구 DM(§친구 기능): 상대가 나를 차단했으면 전송 불가 — 차단당한 쪽만 막힌다.
+  if (access.type === 'DM' && access.dm) {
+    if (await isSenderBlockedByRecipient(me.id, access.dm.otherUserId)) {
+      return NextResponse.json({ code: 'BLOCKED', error: '차단당한 사용자입니다.' }, { status: 403 })
+    }
   }
 
   const db = getDb()

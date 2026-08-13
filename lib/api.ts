@@ -7,6 +7,9 @@
 // ─────────────────────────────────────────────────────────────
 import type {
   AppNotification,
+  FriendRequestSummary,
+  FriendshipStatus,
+  FriendSummary,
   MannerAvatarAccessory,
   MannerAvatarColor,
   MannerProfile,
@@ -354,4 +357,99 @@ export async function submitMannerReview(
     body: JSON.stringify(input),
   })
   await parseJsonResponse<{ ok: true }>(res)
+}
+
+// ─────────────────────────────────────────────────────────────
+// 친구 기능(신규)
+// ─────────────────────────────────────────────────────────────
+
+/** 내 친구 목록 — GET /api/friends */
+export async function getFriends(): Promise<FriendSummary[]> {
+  const res = await fetch('/api/friends')
+  const data = await parseJsonResponse<{ friends: FriendSummary[] }>(res)
+  return data.friends
+}
+
+/** 친구 신청 보내기 — POST /api/friends. 같은 공동주문에 참여했던 사이만 가능 */
+export async function sendFriendRequest(targetUserId: string): Promise<{ status: 'PENDING' | 'ACCEPTED' }> {
+  const res = await fetch('/api/friends', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId }),
+  })
+  return parseJsonResponse<{ ok: true; status: 'PENDING' | 'ACCEPTED' }>(res)
+}
+
+/** 친구 삭제 — DELETE /api/friends/:userId */
+export async function removeFriend(userId: string): Promise<void> {
+  const res = await fetch(`/api/friends/${userId}`, { method: 'DELETE' })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
+/** 내가 받은 친구 신청 목록 — GET /api/friends/requests */
+export async function getFriendRequests(): Promise<FriendRequestSummary[]> {
+  const res = await fetch('/api/friends/requests')
+  const data = await parseJsonResponse<{ requests: FriendRequestSummary[] }>(res)
+  return data.requests
+}
+
+/** 친구 신청 수락/거절 — PATCH /api/friends/requests/:requestId */
+export async function respondToFriendRequest(requestId: string, action: 'accept' | 'reject'): Promise<void> {
+  const res = await fetch(`/api/friends/requests/${requestId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
+/** 차단 목록 — GET /api/blocks */
+export async function getBlockedUsers(): Promise<FriendSummary[]> {
+  const res = await fetch('/api/blocks')
+  const data = await parseJsonResponse<{ blocked: FriendSummary[] }>(res)
+  return data.blocked
+}
+
+/** 사용자 차단 — POST /api/blocks. 기존 친구 관계도 함께 끊긴다 */
+export async function blockUser(targetUserId: string): Promise<void> {
+  const res = await fetch('/api/blocks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId }),
+  })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
+/** 차단 해제 — DELETE /api/blocks/:userId */
+export async function unblockUser(userId: string): Promise<void> {
+  const res = await fetch(`/api/blocks/${userId}`, { method: 'DELETE' })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
+/** 특정 사용자와의 관계 상태(친구/신청중/차단 등) — GET /api/users/:id/friendship */
+export async function getFriendshipContext(
+  userId: string,
+): Promise<{ status: FriendshipStatus; canRequest: boolean; requestId?: string }> {
+  const res = await fetch(`/api/users/${userId}/friendship`)
+  return parseJsonResponse<{ status: FriendshipStatus; canRequest: boolean; requestId?: string }>(res)
+}
+
+/** 친구와의 DM방 열기(없으면 새로 생성) — POST /api/dm. 친구 사이에서만 가능 */
+export async function openDmWithFriend(targetUserId: string): Promise<{ roomId: string }> {
+  const res = await fetch('/api/dm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId }),
+  })
+  return parseJsonResponse<{ roomId: string }>(res)
+}
+
+/** 모집방에 친구 초대(승인 절차는 그대로, 알림만 감) — POST /api/pots/:id/invite */
+export async function invitePotFriends(potId: string, friendUserIds: string[]): Promise<{ invitedCount: number }> {
+  const res = await fetch(`/api/pots/${potId}/invite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ friendUserIds }),
+  })
+  return parseJsonResponse<{ ok: true; invitedCount: number }>(res)
 }
