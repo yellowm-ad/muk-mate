@@ -128,6 +128,8 @@ export interface Message {
   isMine: boolean
   /** SYSTEM 메시지는 없음(senderId가 없으니까) */
   manner?: MannerAvatarInfo
+  /** 전체 삭제(카카오톡 스타일) 시각 — 있으면 content 대신 "메시지가 삭제되었습니다"를 보여준다 */
+  deletedAt?: string | null
 }
 
 /** 읽음 표시(v2.5) — ORDER 채팅방 참여자별 마지막으로 읽은 메시지 id */

@@ -190,9 +190,9 @@ export async function withdrawAccount(currentPassword: string): Promise<void> {
 export async function getMessages(
   roomId: string,
   afterId = 0,
-): Promise<{ messages: Message[]; reads: RoomReadEntry[] }> {
+): Promise<{ messages: Message[]; reads: RoomReadEntry[]; deletedMessageIds: number[] }> {
   const res = await fetch(`/api/rooms/${roomId}/messages?after=${afterId}`)
-  return parseJsonResponse<{ messages: Message[]; reads: RoomReadEntry[] }>(res)
+  return parseJsonResponse<{ messages: Message[]; reads: RoomReadEntry[]; deletedMessageIds: number[] }>(res)
 }
 
 /** 메시지 전송 — POST /api/rooms/:id/messages */
@@ -204,6 +204,16 @@ export async function sendMessage(roomId: string, content: string): Promise<Mess
   })
   const data = await parseJsonResponse<{ message: Message }>(res)
   return data.message
+}
+
+/** 채팅 삭제 — DELETE /api/rooms/:id/messages, 5분 이내 내 메시지는 전체 삭제, 그 외는 나만 안 보이게 삭제 */
+export async function deleteMessages(roomId: string, messageIds: number[]): Promise<void> {
+  const res = await fetch(`/api/rooms/${roomId}/messages`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageIds }),
+  })
+  await parseJsonResponse<{ ok: boolean }>(res)
 }
 
 /** 장소 검색 — GET /api/places/search?q=, 카카오 로컬 API 서버 프록시 */

@@ -3,7 +3,15 @@ import { NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 import { messages, users } from '@/lib/db/schema'
-import { getMessagesForRoom, getRoomForViewer, getRoomReads, getSessionUserOrNull, markRoomRead } from '@/lib/server-data'
+import {
+  deleteMessagesForViewer,
+  getMessagesForRoom,
+  getRecentlyDeletedMessageIds,
+  getRoomForViewer,
+  getRoomReads,
+  getSessionUserOrNull,
+  markRoomRead,
+} from '@/lib/server-data'
 
 const CONTENT_MAX = 500
 
@@ -23,6 +31,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const after = Number(afterRaw ?? '0')
 
   const list = await getMessagesForRoom(id, Number.isFinite(after) ? after : 0, me.id)
+  // 이미 화면에 떠 있던 메시지가 그 사이 전체 삭제됐을 수도 있으니 매번 함께 내려준다(§채팅 삭제).
+  const deletedMessageIds = await getRecentlyDeletedMessageIds(id)
 
   // 방을 조회했다는 건 읽었다는 뜻 — 방 종류 무관하게 내 커서를 올린다(채팅 목록 안읽음 수에 반영됨).
   await markRoomRead(id, me.id)
@@ -33,7 +43,33 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     reads = await getRoomReads(id, access.pot.id)
   }
 
-  return NextResponse.json({ messages: list, reads })
+  return NextResponse.json({ messages: list, reads, deletedMessageIds })
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const me = await getSessionUserOrNull()
+  if (!me) {
+    return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+  }
+
+  const { id } = await params
+  const access = await getRoomForViewer(id, me.id)
+  if (!access) {
+    return NextResponse.json({ error: '접근 권한이 없습니다.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => null)
+  const rawIds = Array.isArray(body?.messageIds) ? (body.messageIds as unknown[]) : []
+  const messageIds = rawIds
+    .map((v) => Number(v))
+    .filter((n) => Number.isInteger(n) && n > 0)
+
+  const result = await deleteMessagesForViewer(id, me.id, messageIds)
+  if (!result.ok) {
+    return NextResponse.json({ code: result.code, error: result.error }, { status: 400 })
+  }
+
+  return NextResponse.json({ ok: true })
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

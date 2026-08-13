@@ -16,6 +16,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react'
 
 import { ReportModal } from '@/components/chat/report-modal'
@@ -29,17 +30,25 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-import { getMessages, sendMessage } from '@/lib/api'
+import { deleteMessages, getMessages, sendMessage } from '@/lib/api'
 import { formatClock, formatDateDivider, formatDateTime, isSameDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Message, RoomAccess, RoomReadEntry } from '@/lib/types'
 
 const POLL_INTERVAL_MS = 2500
+// 채팅 삭제(카카오톡 스타일) — 내가 보낸 지 이 시간 안이면 전체 삭제, 지나면 나만 안 보이게 삭제.
+const MESSAGE_DELETE_WINDOW_MS = 5 * 60 * 1000
 
 /** 읽음 표시(v2.5) — 이 메시지를 보낸 사람을 제외한 참여자 중 아직 안 읽은 인원수 (카카오톡 그룹채팅 방식) */
 function unreadCountFor(message: Message, reads: RoomReadEntry[]): number {
   const msgId = Number(message.id)
   return reads.filter((r) => r.userId !== message.senderId && r.lastReadMessageId < msgId).length
+}
+
+/** 전체 삭제(모두에게 "메시지가 삭제되었습니다") 가능 여부 — 서버가 최종 판정하지만 확인창 문구 선택엔 이걸로 미리 판단한다 */
+function isRealDeleteEligible(m: Message): boolean {
+  if (!m.isMine || m.deletedAt) return false
+  return Date.now() - new Date(m.createdAt).getTime() < MESSAGE_DELETE_WINDOW_MS
 }
 
 export function ChatRoomView({
@@ -64,6 +73,12 @@ export function ChatRoomView({
   // 더보기 메뉴 및 모달 상태
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [safetyGuideOpen, setSafetyGuideOpen] = useState(false)
+
+  // 채팅 삭제(선택 모드) 상태
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // 신고 모달 상태
   const [reportModalOpen, setReportModalOpen] = useState(false)
@@ -107,8 +122,16 @@ export function ChatRoomView({
     const interval = setInterval(async () => {
       if (document.hidden) return
       try {
-        const { messages: fresh, reads: freshReads } = await getMessages(room.id, lastIdRef.current)
+        const { messages: fresh, reads: freshReads, deletedMessageIds } = await getMessages(room.id, lastIdRef.current)
         setReads(freshReads)
+
+        // 이미 화면에 있던 메시지가 그 사이 전체 삭제됐을 수도 있으니 매번 반영한다(§채팅 삭제).
+        if (deletedMessageIds.length > 0) {
+          const delSet = new Set(deletedMessageIds)
+          setMessages((prev) =>
+            prev.map((m) => (delSet.has(Number(m.id)) && !m.deletedAt ? { ...m, deletedAt: new Date().toISOString() } : m)),
+          )
+        }
 
         if (fresh.length === 0) return
 
@@ -194,6 +217,59 @@ export function ChatRoomView({
     setReportModalOpen(true)
   }
 
+  // 채팅 삭제(선택 모드) — 더보기 메뉴에서 진입
+  function startSelectMode() {
+    setMoreMenuOpen(false)
+    setSelectedIds(new Set())
+    setSelectMode(true)
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  function toggleSelectMessage(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectedMessages = messages.filter((m) => selectedIds.has(Number(m.id)))
+  const allSelectedRealDelete = selectedMessages.length > 0 && selectedMessages.every(isRealDeleteEligible)
+
+  async function handleConfirmDelete() {
+    setDeleting(true)
+    try {
+      const ids = [...selectedIds]
+      await deleteMessages(room.id, ids)
+      const idSet = new Set(ids)
+      setMessages((prev) => {
+        const next: Message[] = []
+        for (const m of prev) {
+          if (!idSet.has(Number(m.id))) {
+            next.push(m)
+            continue
+          }
+          if (isRealDeleteEligible(m)) {
+            next.push({ ...m, deletedAt: new Date().toISOString() })
+          }
+          // 그 외(남의 메시지 · 5분 지난 내 메시지)는 나만 안 보이게 삭제 — 내 화면에서 바로 제거
+        }
+        return next
+      })
+      setDeleteConfirmOpen(false)
+      exitSelectMode()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '삭제에 실패했어요.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="relative flex flex-1 flex-col">
       {/* 1. 상단 헤더 */}
@@ -201,64 +277,85 @@ export function ChatRoomView({
         <div className="flex items-center gap-1 min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => router.back()}
-            aria-label="뒤로"
+            onClick={selectMode ? exitSelectMode : () => router.back()}
+            aria-label={selectMode ? '선택 취소' : '뒤로'}
             className="flex size-11 items-center justify-center rounded-full text-foreground transition active:scale-[0.95] hover:bg-muted"
           >
             <ArrowLeft className="size-5" />
           </button>
-          <h1 className="truncate text-base font-bold text-foreground">{room.title}</h1>
+          <h1 className="truncate text-base font-bold text-foreground">
+            {selectMode ? `${selectedIds.size}개 선택` : room.title}
+          </h1>
         </div>
 
-        {/* 더보기 버튼 (⋮) */}
-        <div className="relative">
+        {selectMode ? (
           <button
             type="button"
-            onClick={() => setMoreMenuOpen(!moreMenuOpen)}
-            aria-label="더보기 메뉴"
-            className="flex size-11 items-center justify-center rounded-full text-foreground transition active:scale-[0.95] hover:bg-muted"
+            onClick={() => selectedIds.size > 0 && setDeleteConfirmOpen(true)}
+            disabled={selectedIds.size === 0}
+            className="px-3 text-sm font-bold text-destructive transition disabled:opacity-40"
           >
-            <MoreVertical className="size-5" />
+            삭제
           </button>
+        ) : (
+          /* 더보기 버튼 (⋮) */
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+              aria-label="더보기 메뉴"
+              className="flex size-11 items-center justify-center rounded-full text-foreground transition active:scale-[0.95] hover:bg-muted"
+            >
+              <MoreVertical className="size-5" />
+            </button>
 
-          {/* 더보기 팝오버 메뉴 (§5-1) */}
-          {moreMenuOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
-              <div className="absolute right-2 top-12 z-50 flex w-44 flex-col rounded-xl border border-border bg-popover p-1 shadow-lg divide-y divide-border/50 text-xs font-semibold text-popover-foreground">
-                {room.pot && (
-                  <Link
-                    href={`/pots/${room.pot.id}`}
-                    onClick={() => setMoreMenuOpen(false)}
-                    className="flex items-center gap-2 px-3 py-2.5 hover:bg-muted rounded-lg"
+            {/* 더보기 팝오버 메뉴 (§5-1) */}
+            {moreMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
+                <div className="absolute right-2 top-12 z-50 flex w-44 flex-col rounded-xl border border-border bg-popover p-1 shadow-lg divide-y divide-border/50 text-xs font-semibold text-popover-foreground">
+                  {room.pot && (
+                    <Link
+                      href={`/pots/${room.pot.id}`}
+                      onClick={() => setMoreMenuOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2.5 hover:bg-muted rounded-lg"
+                    >
+                      <ExternalLink className="size-3.5 text-primary" />
+                      공동주문 상세보기
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false)
+                      setSafetyGuideOpen(true)
+                    }}
+                    className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted rounded-lg"
                   >
-                    <ExternalLink className="size-3.5 text-primary" />
-                    공동주문 상세보기
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMoreMenuOpen(false)
-                    setSafetyGuideOpen(true)
-                  }}
-                  className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted rounded-lg"
-                >
-                  <ShieldCheck className="size-3.5 text-emerald-600" />
-                  안전 이용 안내
-                </button>
-                <button
-                  type="button"
-                  onClick={openReportUser}
-                  className="flex items-center gap-2 px-3 py-2.5 text-left text-destructive hover:bg-destructive/10 rounded-lg"
-                >
-                  <ShieldAlert className="size-3.5" />
-                  사용자 신고
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+                    <ShieldCheck className="size-3.5 text-emerald-600" />
+                    안전 이용 안내
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startSelectMode}
+                    className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted rounded-lg"
+                  >
+                    <Trash2 className="size-3.5 text-muted-foreground" />
+                    채팅 삭제
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openReportUser}
+                    className="flex items-center gap-2 px-3 py-2.5 text-left text-destructive hover:bg-destructive/10 rounded-lg"
+                  >
+                    <ShieldAlert className="size-3.5" />
+                    사용자 신고
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       {/* 2. 주문 채팅방 상단 고정 정보 (§5-1) */}
@@ -328,57 +425,75 @@ export function ChatRoomView({
 
           const showNickname = !m.isMine && (!prev || prev.senderId !== m.senderId || showDivider)
           const unreadCount = room.type === 'ORDER' ? unreadCountFor(m, reads) : 0
+          const isDeleted = Boolean(m.deletedAt)
+          const isSelected = selectedIds.has(Number(m.id))
 
           return (
             <div key={m.id} ref={(el) => { if (el) messageRefs.current.set(m.id, el) }}>
               {showDivider && <DateDivider iso={m.createdAt} />}
-              <div className={cn('flex gap-2', m.isMine ? 'flex-row-reverse' : 'flex-row')}>
-                {/* 발신자 아바타(v2.14) — 같은 사람이 연달아 보낸 메시지는 첫 줄에만 표시, 나머지는 자리만 비운다 */}
-                {!m.isMine && (
-                  <div className="w-7 shrink-0 self-end">
-                    {showNickname && m.manner && (
-                      <MannerAvatar
-                        stage={m.manner.stage}
-                        color={m.manner.avatarColor}
-                        accessory={m.manner.avatarAccessory}
-                        className="size-7"
-                      />
-                    )}
-                  </div>
+              <div className="flex items-end gap-1.5">
+                {/* 채팅 삭제 선택 모드 체크박스 — 이미 전체 삭제된 메시지는 더 지울 게 없어 제외 */}
+                {selectMode && !isDeleted && (
+                  <label className="flex size-6 shrink-0 items-center justify-center self-end pb-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectMessage(Number(m.id))}
+                      className="size-4 accent-primary"
+                      aria-label="메시지 선택"
+                    />
+                  </label>
                 )}
-                <div className={cn('flex flex-col gap-0.5', m.isMine ? 'items-end' : 'items-start')}>
-                  {showNickname && (
-                    <span className="px-1 text-xs font-semibold text-muted-foreground">{m.senderNickname}</span>
+                <div className={cn('flex flex-1 gap-2', m.isMine ? 'flex-row-reverse' : 'flex-row')}>
+                  {/* 발신자 아바타(v2.14) — 같은 사람이 연달아 보낸 메시지는 첫 줄에만 표시, 나머지는 자리만 비운다 */}
+                  {!m.isMine && (
+                    <div className="w-7 shrink-0 self-end">
+                      {showNickname && m.manner && (
+                        <MannerAvatar
+                          stage={m.manner.stage}
+                          color={m.manner.avatarColor}
+                          accessory={m.manner.avatarAccessory}
+                          className="size-7"
+                        />
+                      )}
+                    </div>
                   )}
-                  <div className={cn('group relative flex items-end gap-1.5', m.isMine ? 'flex-row-reverse' : 'flex-row')}>
-                    <div
-                      className={cn(
-                        'max-w-64 rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap',
-                        m.isMine
-                          ? 'rounded-br-sm bg-primary text-primary-foreground'
-                          : 'rounded-bl-sm bg-muted text-foreground',
-                      )}
-                    >
-                      {m.content}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-center gap-0.5">
-                      {unreadCount > 0 && (
-                        <span className="text-[10px] font-bold leading-none text-primary">{unreadCount}</span>
-                      )}
-                      <span className="text-[11px] leading-none text-muted-foreground">{formatClock(m.createdAt)}</span>
-                    </div>
-
-                    {/* 타인 메시지 신고 버튼 (§7-1) */}
-                    {!m.isMine && (
-                      <button
-                        type="button"
-                        onClick={() => openReportMessage(m)}
-                        title="메시지 신고"
-                        className="opacity-0 group-hover:opacity-100 transition p-1 text-muted-foreground hover:text-destructive"
-                      >
-                        <Flag className="size-3.5" />
-                      </button>
+                  <div className={cn('flex flex-col gap-0.5', m.isMine ? 'items-end' : 'items-start')}>
+                    {showNickname && (
+                      <span className="px-1 text-xs font-semibold text-muted-foreground">{m.senderNickname}</span>
                     )}
+                    <div className={cn('group relative flex items-end gap-1.5', m.isMine ? 'flex-row-reverse' : 'flex-row')}>
+                      <div
+                        className={cn(
+                          'max-w-64 rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap',
+                          isDeleted
+                            ? 'border border-dashed border-border bg-transparent italic text-muted-foreground'
+                            : m.isMine
+                              ? 'rounded-br-sm bg-primary text-primary-foreground'
+                              : 'rounded-bl-sm bg-muted text-foreground',
+                        )}
+                      >
+                        {isDeleted ? '메시지가 삭제되었습니다' : m.content}
+                      </div>
+                      <div className="flex shrink-0 flex-col items-center gap-0.5">
+                        {unreadCount > 0 && (
+                          <span className="text-[10px] font-bold leading-none text-primary">{unreadCount}</span>
+                        )}
+                        <span className="text-[11px] leading-none text-muted-foreground">{formatClock(m.createdAt)}</span>
+                      </div>
+
+                      {/* 타인 메시지 신고 버튼 (§7-1) */}
+                      {!m.isMine && !isDeleted && (
+                        <button
+                          type="button"
+                          onClick={() => openReportMessage(m)}
+                          title="메시지 신고"
+                          className="opacity-0 group-hover:opacity-100 transition p-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <Flag className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -400,35 +515,56 @@ export function ChatRoomView({
         </button>
       )}
 
-      {/* 6. 하단 메시지 입력창 */}
-      <form
-        onSubmit={handleSend}
-        className="sticky bottom-0 flex flex-col gap-1 border-t border-border bg-background/95 px-3 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] backdrop-blur"
-      >
-        {error && (
-          <div className="flex items-center gap-1.5 text-xs text-destructive px-1">
-            <AlertCircle className="size-3.5" />
-            <span>{error}</span>
-          </div>
-        )}
-        <div className="flex items-end gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="메시지를 입력하세요 (최대 500자)"
-            maxLength={500}
-            className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary"
-          />
+      {/* 6. 하단 메시지 입력창 (채팅 삭제 선택 모드에서는 삭제 액션 바로 대체) */}
+      {selectMode ? (
+        <div className="sticky bottom-0 flex items-center justify-between gap-2 border-t border-border bg-background/95 px-4 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] backdrop-blur">
           <button
-            type="submit"
-            disabled={sending || !input.trim()}
-            aria-label="전송"
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition active:scale-[0.95] disabled:opacity-40"
+            type="button"
+            onClick={exitSelectMode}
+            className="px-2 text-sm font-semibold text-muted-foreground"
           >
-            <Send className="size-4" />
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={() => selectedIds.size > 0 && setDeleteConfirmOpen(true)}
+            disabled={selectedIds.size === 0}
+            className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-destructive px-5 text-sm font-bold text-destructive-foreground transition active:scale-[0.98] disabled:opacity-40"
+          >
+            <Trash2 className="size-4" />
+            삭제하기{selectedIds.size > 0 && ` (${selectedIds.size})`}
           </button>
         </div>
-      </form>
+      ) : (
+        <form
+          onSubmit={handleSend}
+          className="sticky bottom-0 flex flex-col gap-1 border-t border-border bg-background/95 px-3 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] backdrop-blur"
+        >
+          {error && (
+            <div className="flex items-center gap-1.5 text-xs text-destructive px-1">
+              <AlertCircle className="size-3.5" />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="메시지를 입력하세요 (최대 500자)"
+              maxLength={500}
+              className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary"
+            />
+            <button
+              type="submit"
+              disabled={sending || !input.trim()}
+              aria-label="전송"
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition active:scale-[0.95] disabled:opacity-40"
+            >
+              <Send className="size-4" />
+            </button>
+          </div>
+        </form>
+      )}
 
       {/* 7. 모달들 */}
       {/* 신고 모달 */}
@@ -464,6 +600,42 @@ export function ChatRoomView({
           <DialogFooter>
             <Button onClick={() => setSafetyGuideOpen(false)} className="h-11 w-full rounded-xl font-bold">
               확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 채팅 삭제 확인 모달 — 5분 이내 내 메시지만 전체 삭제, 그 외는 나만 안 보이게 삭제됨을 안내 */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={(open) => !deleting && setDeleteConfirmOpen(open)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold leading-snug">
+              {allSelectedRealDelete
+                ? '선택한 메시지를 삭제할까요?'
+                : '해당 채팅은 나만 안보이게 삭제됩니다. 삭제하시겠습니까?'}
+            </DialogTitle>
+          </DialogHeader>
+          {allSelectedRealDelete && (
+            <p className="text-xs text-muted-foreground">
+              삭제하면 되돌릴 수 없고, 상대방에게는 &quot;메시지가 삭제되었습니다&quot;로 보여요.
+            </p>
+          )}
+          <DialogFooter className="mt-3 flex-row gap-2 sm:justify-center">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={deleting}
+              className="h-11 flex-1 rounded-xl font-bold"
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+              className="h-11 flex-1 rounded-xl font-bold"
+            >
+              {deleting ? '삭제하는 중...' : '확인'}
             </Button>
           </DialogFooter>
         </DialogContent>

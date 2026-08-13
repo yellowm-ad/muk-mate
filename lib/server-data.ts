@@ -12,6 +12,7 @@ import {
   mannerEvents,
   mannerProfiles,
   mannerReviews,
+  messageHides,
   messages,
   notifications,
   participations,
@@ -840,10 +841,16 @@ export async function getMessagesForRoom(
       type: messages.type,
       content: messages.content,
       createdAt: messages.createdAt,
+      deletedAt: messages.deletedAt,
+      hideId: messageHides.id,
     })
     .from(messages)
     .leftJoin(users, eq(messages.senderId, users.id))
-    .where(and(eq(messages.roomId, roomId), gt(messages.id, afterId)))
+    .leftJoin(
+      messageHides,
+      and(eq(messageHides.messageId, messages.id), eq(messageHides.userId, viewerId ?? '')),
+    )
+    .where(and(eq(messages.roomId, roomId), gt(messages.id, afterId), isNull(messageHides.id)))
     .orderBy(asc(messages.id))
 
   // v2.14: 메시지 발신자 옆에도 매너 아바타 노출 — SYSTEM 메시지(senderId 없음)는 대상에서 제외
@@ -860,7 +867,87 @@ export async function getMessagesForRoom(
     createdAt: r.createdAt.toISOString(),
     isMine: r.senderId === viewerId,
     manner: r.senderId ? mannerMap.get(r.senderId) : undefined,
+    deletedAt: r.deletedAt ? r.deletedAt.toISOString() : null,
   }))
+}
+
+// 채팅 삭제(카카오톡 스타일) — 보낸 사람이 이 시간 안에 지우면 전체 삭제, 지나면 본인 화면에서만 숨김.
+const MESSAGE_DELETE_WINDOW_MS = 5 * 60 * 1000
+// 이미 화면에 떠 있던 메시지가 전체 삭제됐을 때도 반영되도록, 폴링 때마다 최근 이 시간 내의
+// 전체 삭제 id 목록을 함께 내려준다(§채팅 삭제 — 폴링 반영 설계).
+const RECENT_DELETE_WINDOW_MS = 10 * 60 * 1000
+
+/** 최근 전체 삭제된 메시지 id 목록 — 이미 불러온 메시지가 뒤늦게 삭제됐을 때 폴링으로 반영하기 위함 */
+export async function getRecentlyDeletedMessageIds(roomId: string): Promise<number[]> {
+  const db = getDb()
+  const cutoff = new Date(Date.now() - RECENT_DELETE_WINDOW_MS)
+  const rows = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.roomId, roomId), gt(messages.deletedAt, cutoff)))
+  return rows.map((r) => r.id)
+}
+
+export type DeleteMessagesResult =
+  | { ok: true }
+  | { ok: false; code: 'INVALID_INPUT'; error: string }
+
+/**
+ * 채팅 삭제 — 본인이 보낸 지 5분 이내인 메시지는 전체 삭제(모두에게 "메시지가 삭제되었습니다"),
+ * 그 외(남의 메시지이거나 5분이 지난 내 메시지)는 나만 안 보이게 숨긴다. 어느 쪽이든 클라이언트가
+ * 미리 알려준 값을 신뢰하지 않고 여기서 다시 판정한다.
+ */
+export async function deleteMessagesForViewer(
+  roomId: string,
+  viewerId: string,
+  messageIds: number[],
+): Promise<DeleteMessagesResult> {
+  if (messageIds.length === 0) {
+    return { ok: false, code: 'INVALID_INPUT', error: '삭제할 메시지를 선택해주세요.' }
+  }
+
+  const db = getDb()
+  const rows = await db
+    .select({
+      id: messages.id,
+      senderId: messages.senderId,
+      type: messages.type,
+      createdAt: messages.createdAt,
+      deletedAt: messages.deletedAt,
+    })
+    .from(messages)
+    .where(and(eq(messages.roomId, roomId), inArray(messages.id, messageIds)))
+
+  const now = Date.now()
+  const realDeleteIds: number[] = []
+  const hideIds: number[] = []
+
+  for (const row of rows) {
+    if (row.type !== 'TEXT' || row.deletedAt) continue // SYSTEM, 이미 전체 삭제된 메시지는 대상 아님
+    const isOwn = row.senderId === viewerId
+    const withinWindow = now - row.createdAt.getTime() < MESSAGE_DELETE_WINDOW_MS
+    if (isOwn && withinWindow) {
+      realDeleteIds.push(row.id)
+    } else {
+      hideIds.push(row.id)
+    }
+  }
+
+  if (realDeleteIds.length === 0 && hideIds.length === 0) {
+    return { ok: false, code: 'INVALID_INPUT', error: '삭제할 수 있는 메시지가 없습니다.' }
+  }
+
+  if (realDeleteIds.length > 0) {
+    await db.update(messages).set({ deletedAt: new Date() }).where(inArray(messages.id, realDeleteIds))
+  }
+  if (hideIds.length > 0) {
+    await db
+      .insert(messageHides)
+      .values(hideIds.map((id) => ({ messageId: id, userId: viewerId })))
+      .onConflictDoNothing()
+  }
+
+  return { ok: true }
 }
 
 /**

@@ -157,8 +157,29 @@ export const messages = pgTable(
     type: messageTypeEnum('type').notNull().default('TEXT'),
     content: text('content').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // 채팅 삭제(카카오톡 스타일) — 보낸 사람 본인이 5분 이내에 지우면 전체 삭제(모두에게 "메시지가
+    // 삭제되었습니다"로 표시). content는 신고 스냅샷 등과의 정합성을 위해 지우지 않고 남겨두고,
+    // 화면에서는 deletedAt이 있으면 항상 content 대신 삭제 문구를 보여준다.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [index('idx_messages_room').on(table.roomId, table.id)],
+)
+
+// 5분이 지났거나 남의 메시지라 전체 삭제할 수 없을 때 쓰는 "나만 안 보이게 삭제" — 이 표에 행이
+// 있으면 해당 유저의 목록 조회에서만 그 메시지를 제외한다(다른 참여자에게는 원본 그대로 보인다).
+export const messageHides = pgTable(
+  'message_hides',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    messageId: bigint('message_id', { mode: 'number' })
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('message_hides_message_user_key').on(table.messageId, table.userId)],
 )
 
 // 읽음 표시(v2.5) — 주문 채팅방(ORDER) 한정. 커뮤니티 채팅방은 참여자 개념이 없어 대상에서 제외.
