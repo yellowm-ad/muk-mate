@@ -506,6 +506,7 @@ export function PotDetailView({
         isOpen={showConfirmSheet}
         onClose={() => setShowConfirmSheet(false)}
         onSubmit={handleJoinSubmit}
+        deliveryFee={pot.deliveryFee}
       />
     </div>
   )

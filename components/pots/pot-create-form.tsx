@@ -81,7 +81,12 @@ export function PotCreateForm() {
   const [orderSummary, setOrderSummary] = useState('')
   const [zoneCode, setZoneCode] = useState<ZoneCode>('DORM')
   const [targetType, setTargetType] = useState<TargetType>('HEADCOUNT')
-  const [targetValue, setTargetValue] = useState<number>(4)
+  // 인원수/금액은 별도 값으로 각각 기억한다 — 모집 방식 탭을 오갈 때 서로의 값을 지우면 안 된다.
+  // 입력창에 타이핑하는 동안은 targetDraft(초안)만 바뀌고, "확인"을 눌러야 실제 값(headcountValue/
+  // amountValue)이 바뀐다.
+  const [headcountValue, setHeadcountValue] = useState<number>(4)
+  const [amountValue, setAmountValue] = useState<number>(15000)
+  const [targetDraft, setTargetDraft] = useState<string>('4')
   const [deliveryFee, setDeliveryFee] = useState<number>(4000)
   const [menuAmount, setMenuAmount] = useState<number>(0)
   const [deadlineMinutes, setDeadlineMinutes] = useState<number>(30)
@@ -89,6 +94,34 @@ export function PotCreateForm() {
   const [pickupNote, setPickupNote] = useState('')
   const [extraNote, setExtraNote] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+
+  const targetValue = targetType === 'HEADCOUNT' ? headcountValue : amountValue
+  const targetDraftNum = Number(targetDraft)
+  const targetDraftDirty = Number.isFinite(targetDraftNum) && targetDraftNum !== targetValue
+
+  function switchTargetType(type: TargetType) {
+    setTargetType(type)
+    setTargetDraft(String(type === 'HEADCOUNT' ? headcountValue : amountValue))
+  }
+
+  function selectTargetPreset(num: number) {
+    if (targetType === 'HEADCOUNT') setHeadcountValue(num)
+    else setAmountValue(num)
+    setTargetDraft(String(num))
+  }
+
+  function confirmTargetDraft() {
+    if (!Number.isFinite(targetDraftNum)) return
+    if (targetType === 'HEADCOUNT') {
+      const clamped = Math.min(20, Math.max(2, Math.round(targetDraftNum)))
+      setHeadcountValue(clamped)
+      setTargetDraft(String(clamped))
+    } else {
+      const clamped = Math.max(1000, Math.round(targetDraftNum))
+      setAmountValue(clamped)
+      setTargetDraft(String(clamped))
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -219,10 +252,7 @@ export function PotCreateForm() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setTargetType('HEADCOUNT')
-                  setTargetValue(4)
-                }}
+                onClick={() => switchTargetType('HEADCOUNT')}
                 className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition ${
                   targetType === 'HEADCOUNT'
                     ? 'border-primary bg-primary text-primary-foreground'
@@ -234,10 +264,7 @@ export function PotCreateForm() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setTargetType('AMOUNT')
-                  setTargetValue(15000)
-                }}
+                onClick={() => switchTargetType('AMOUNT')}
                 className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition ${
                   targetType === 'AMOUNT'
                     ? 'border-primary bg-primary text-primary-foreground'
@@ -258,20 +285,33 @@ export function PotCreateForm() {
                   type="number"
                   min={2}
                   max={20}
-                  value={targetValue}
-                  onChange={(e) => setTargetValue(Number(e.target.value))}
+                  value={targetDraft}
+                  onChange={(e) => setTargetDraft(e.target.value)}
                   className="h-11 rounded-xl"
                 />
                 <span className="shrink-0 font-bold text-foreground">명</span>
+                <Button
+                  type="button"
+                  onClick={confirmTargetDraft}
+                  variant={targetDraftDirty ? 'default' : 'outline'}
+                  className="h-11 shrink-0 rounded-xl px-4"
+                >
+                  확인
+                </Button>
               </div>
+              {targetDraftDirty && (
+                <p className="text-xs font-semibold text-primary">
+                  확인을 눌러야 목표 인원이 바뀌어요 · 현재 설정값 {headcountValue}명
+                </p>
+              )}
               <div className="mt-1 flex gap-2">
                 {[2, 3, 4, 5].map((num) => (
                   <button
                     key={num}
                     type="button"
-                    onClick={() => setTargetValue(num)}
+                    onClick={() => selectTargetPreset(num)}
                     className={`h-8 flex-1 rounded-lg border text-xs font-semibold ${
-                      targetValue === num
+                      headcountValue === num
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background text-muted-foreground'
                     }`}
@@ -289,20 +329,33 @@ export function PotCreateForm() {
                   type="number"
                   step={1000}
                   min={1000}
-                  value={targetValue}
-                  onChange={(e) => setTargetValue(Number(e.target.value))}
+                  value={targetDraft}
+                  onChange={(e) => setTargetDraft(e.target.value)}
                   className="h-11 rounded-xl"
                 />
                 <span className="shrink-0 font-bold text-foreground">원</span>
+                <Button
+                  type="button"
+                  onClick={confirmTargetDraft}
+                  variant={targetDraftDirty ? 'default' : 'outline'}
+                  className="h-11 shrink-0 rounded-xl px-4"
+                >
+                  확인
+                </Button>
               </div>
+              {targetDraftDirty && (
+                <p className="text-xs font-semibold text-primary">
+                  확인을 눌러야 목표 금액이 바뀌어요 · 현재 설정값 {amountValue.toLocaleString()}원
+                </p>
+              )}
               <div className="mt-1 flex gap-2">
                 {[12000, 15000, 20000, 25000].map((amt) => (
                   <button
                     key={amt}
                     type="button"
-                    onClick={() => setTargetValue(amt)}
+                    onClick={() => selectTargetPreset(amt)}
                     className={`h-8 flex-1 rounded-lg border text-xs font-semibold ${
-                      targetValue === amt
+                      amountValue === amt
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background text-muted-foreground'
                     }`}

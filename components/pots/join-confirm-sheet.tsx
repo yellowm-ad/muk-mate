@@ -4,14 +4,17 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { formatWon } from '@/lib/format'
 
 interface JoinConfirmSheetProps {
   isOpen: boolean
   onClose: () => void
   onSubmit: (menuMemo: string, menuAmount: number) => Promise<void>
+  /** 참여 신청 화면에서 바로 확인할 수 있어야 하는 총 배달비(§5-4) — 수령 정보에도 나오지만 여기서 놓치기 쉽다 */
+  deliveryFee: number
 }
 
-export function JoinConfirmSheet({ isOpen, onClose, onSubmit }: JoinConfirmSheetProps) {
+export function JoinConfirmSheet({ isOpen, onClose, onSubmit, deliveryFee }: JoinConfirmSheetProps) {
   const [menuMemo, setMenuMemo] = useState('')
   const [menuAmount, setMenuAmount] = useState<number>(0)
   const [submitting, setSubmitting] = useState(false)
@@ -83,7 +86,9 @@ export function JoinConfirmSheet({ isOpen, onClose, onSubmit }: JoinConfirmSheet
               onChange={(e) => setMenuAmount(Number(e.target.value))}
               className="mt-1.5 h-11 rounded-xl"
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">배달비 분담 계산에 쓰여요.</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              총 배달비 {formatWon(deliveryFee)} · 참여 인원으로 나눠서 부담해요.
+            </p>
           </div>
 
           <div className="flex gap-2 pt-2">
