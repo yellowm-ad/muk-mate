@@ -94,12 +94,20 @@ export async function updatePot(
   return data.pot
 }
 
-/** 모집글 삭제 — DELETE /api/pots/:id, 모집자 전용 · 참여자가 없을 때만 가능 */
+/** 모집글 삭제 — DELETE /api/pots/:id, 모집자 전용 · 참여자가 없거나 전원 거래 완료 확인(ORDERED) 후에만 가능 */
 export async function deletePot(potId: string): Promise<void> {
   const res = await fetch(`/api/pots/${potId}`, {
     method: 'DELETE',
   })
   await parseJsonResponse<{ ok: boolean }>(res)
+}
+
+/** 거래 완료 확인 — POST /api/pots/:id/complete, 방장 포함 승인 참여자 전용. 전원 확인 시 자동으로 ORDERED 전이 */
+export async function confirmPotComplete(
+  potId: string,
+): Promise<{ allConfirmed: boolean; done: number; total: number }> {
+  const res = await fetch(`/api/pots/${potId}/complete`, { method: 'POST' })
+  return parseJsonResponse<{ ok: boolean; allConfirmed: boolean; done: number; total: number }>(res)
 }
 
 /** 참여 신청 — POST /api/pots/:id/join */

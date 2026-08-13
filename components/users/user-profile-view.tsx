@@ -5,6 +5,7 @@ import { ShieldAlert } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { MannerAvatar } from '@/components/manner-avatar'
 import { MannerBadge } from '@/components/manner-badge'
+import { MannerGauge } from '@/components/manner-gauge'
 import { ReportModal } from '@/components/chat/report-modal'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -55,6 +56,7 @@ export function UserProfileView({
             ))}
           </div>
         )}
+        <MannerGauge score={manner.score} stage={manner.stage} className="w-full max-w-[220px]" />
       </div>
 
       <div className="flex flex-col gap-3 p-4">

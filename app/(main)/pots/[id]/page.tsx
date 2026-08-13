@@ -8,6 +8,7 @@ import {
   getParticipationsForPot,
   getPendingRequestsForPot,
   getPotById,
+  getPotCompletionStatus,
 } from '@/lib/server-data'
 
 export default async function PotDetailPage({
@@ -26,11 +27,14 @@ export default async function PotDetailPage({
   if (!pot) notFound()
 
   const isHost = pot.hostId === me.id
-  const [pendingRequests, mannerReviewStatus, hostMenuAmount, hostMannerMap] = await Promise.all([
+  const [pendingRequests, mannerReviewStatus, hostMenuAmount, hostMannerMap, completion] = await Promise.all([
     isHost ? getPendingRequestsForPot(id) : Promise.resolve([]),
     pot.status === 'ORDERED' ? getMannerReviewStatus(id, me.id) : Promise.resolve(undefined),
     getHostMenuAmount(id, pot.hostId),
     getMannerAvatarsForUsers([pot.hostId]),
+    pot.status === 'CLOSED' || pot.status === 'ORDERED'
+      ? getPotCompletionStatus(id, me.id)
+      : Promise.resolve(undefined),
   ])
 
   return (
@@ -42,6 +46,7 @@ export default async function PotDetailPage({
       mannerReviewStatus={mannerReviewStatus}
       hostMenuAmount={hostMenuAmount}
       hostManner={hostMannerMap.get(pot.hostId)}
+      completion={completion}
     />
   )
 }

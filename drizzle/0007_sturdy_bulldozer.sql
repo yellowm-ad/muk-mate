@@ -1,0 +1,1 @@
+ALTER TABLE "participations" ADD COLUMN "completed_at" timestamp with time zone;

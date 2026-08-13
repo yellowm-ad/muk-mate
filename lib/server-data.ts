@@ -36,6 +36,7 @@ import type {
   Message,
   Participation,
   Pot,
+  PotCompletionStatus,
   PotStatus,
   RoomAccess,
   RoomReadEntry,
@@ -259,6 +260,122 @@ export async function cancelPotAndNotify(potId: string, storeName: string, exclu
       dedupeKey: `POT_CANCELED:${potId}:${uid}`,
     })),
   )
+}
+
+/** 마감된(CLOSED) 모집글의 "거래 완료" 확인 현황 — 모집글 상세 화면 배너용 조회 전용 함수 */
+export async function getPotCompletionStatus(potId: string, viewerId: string): Promise<PotCompletionStatus> {
+  const db = getDb()
+  const rows = await db
+    .select({ userId: participations.userId, completedAt: participations.completedAt })
+    .from(participations)
+    .where(and(eq(participations.potId, potId), eq(participations.approvalStatus, 'APPROVED')))
+
+  const total = rows.length
+  const done = rows.filter((r) => r.completedAt !== null).length
+  const mine = rows.find((r) => r.userId === viewerId)
+
+  return {
+    total,
+    done,
+    allConfirmed: total > 0 && done === total,
+    viewerConfirmed: mine?.completedAt != null,
+    viewerIsMember: mine !== undefined,
+  }
+}
+
+export type ConfirmPotCompletionResult =
+  | { ok: true; allConfirmed: boolean; done: number; total: number }
+  | { ok: false; code: 'NOT_FOUND' | 'NOT_A_MEMBER' | 'NOT_CLOSED' | 'ALREADY_ORDERED' | 'CANCELED'; error: string }
+
+/**
+ * 거래 완료 확인(먹튀 방지 조치) — 모집 마감(CLOSED) 후 방장 포함 승인 참여자 전원이 각자
+ * 이 함수를 호출해 확인해야 CLOSED→ORDERED로 자동 전이된다. 한 명이라도 확인하지 않으면
+ * 절대 ORDERED가 되지 않고, DELETE /api/pots/:id도 ORDERED 상태에서만 삭제를 허용하므로
+ * 방장이 일방적으로 방을 지워 참여 이력을 없애는 것도 막힌다.
+ */
+export async function confirmPotCompletion(potId: string, userId: string): Promise<ConfirmPotCompletionResult> {
+  const db = getDb()
+
+  const [pot] = await db
+    .select({ status: pots.status, deadlineAt: pots.deadlineAt, storeName: pots.storeName })
+    .from(pots)
+    .where(eq(pots.id, potId))
+    .limit(1)
+  if (!pot) return { ok: false, code: 'NOT_FOUND', error: '존재하지 않는 공동주문입니다.' }
+
+  if (pot.status === 'CANCELED') {
+    return { ok: false, code: 'CANCELED', error: '취소된 공동주문은 거래 완료를 확인할 수 없습니다.' }
+  }
+  if (pot.status === 'ORDERED') {
+    return { ok: false, code: 'ALREADY_ORDERED', error: '이미 완료 처리된 공동주문입니다.' }
+  }
+  if (computeEffectiveStatus(pot.status, pot.deadlineAt) !== 'CLOSED') {
+    return { ok: false, code: 'NOT_CLOSED', error: '모집이 마감된 후에만 거래 완료를 확인할 수 있습니다.' }
+  }
+
+  const [myRow] = await db
+    .select({ id: participations.id, completedAt: participations.completedAt })
+    .from(participations)
+    .where(
+      and(
+        eq(participations.potId, potId),
+        eq(participations.userId, userId),
+        eq(participations.approvalStatus, 'APPROVED'),
+      ),
+    )
+    .limit(1)
+  if (!myRow) {
+    return { ok: false, code: 'NOT_A_MEMBER', error: '이 공동주문의 참여자만 거래 완료를 확인할 수 있습니다.' }
+  }
+
+  if (!myRow.completedAt) {
+    await db.update(participations).set({ completedAt: new Date() }).where(eq(participations.id, myRow.id))
+  }
+
+  // 마감 시각이 지나 효과상 CLOSED이지만 실제 상태 컬럼이 아직 OPEN이면(§10-3③ 조회시점 판정과 동일하게
+  // 지금까지 아무도 명시적으로 마감하지 않았던 경우) 여기서 같이 맞춰준다.
+  if (pot.status === 'OPEN') {
+    await db.update(pots).set({ status: 'CLOSED' }).where(eq(pots.id, potId))
+  }
+
+  const approvedRows = await db
+    .select({ userId: participations.userId, completedAt: participations.completedAt })
+    .from(participations)
+    .where(and(eq(participations.potId, potId), eq(participations.approvalStatus, 'APPROVED')))
+
+  const total = approvedRows.length
+  const done = approvedRows.filter((r) => r.completedAt !== null).length
+  const allConfirmed = total > 0 && done === total
+
+  if (allConfirmed) {
+    await db.update(pots).set({ status: 'ORDERED', orderedAt: new Date() }).where(eq(pots.id, potId))
+
+    const [room] = await db.select({ id: chatRooms.id }).from(chatRooms).where(eq(chatRooms.potId, potId)).limit(1)
+    if (room) {
+      await db.insert(messages).values({
+        roomId: room.id,
+        senderId: null,
+        type: 'SYSTEM',
+        content: '전원이 거래 완료를 확인해 공동주문이 완료되었습니다.',
+      })
+    }
+
+    const recipients = approvedRows.map((r) => r.userId).filter((uid) => uid !== userId)
+    await createNotificationBulk(
+      db,
+      recipients.map((uid) => ({
+        recipientId: uid,
+        type: 'POT_COMPLETED',
+        potId,
+        title: '공동주문이 완료되었어요',
+        body: `${pot.storeName} 공동주문이 완료 처리되었어요.`,
+        actionPath: `/pots/${potId}`,
+        dedupeKey: `POT_COMPLETED:${potId}:${uid}`,
+      })),
+    )
+  }
+
+  return { ok: true, allConfirmed, done, total }
 }
 
 /**

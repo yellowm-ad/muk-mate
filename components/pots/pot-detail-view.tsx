@@ -12,7 +12,14 @@ import { MannerAvatar } from '@/components/manner-avatar'
 import { ApprovalBadge, PotStatusBadge } from '@/components/status-badge'
 import { StoreAvatar } from '@/components/store-avatar'
 import { Progress } from '@/components/ui/progress'
-import { cancelJoinPot, decideMemberApplication, deletePot, requestJoinPot, updatePotStatus } from '@/lib/api'
+import {
+  cancelJoinPot,
+  confirmPotComplete,
+  decideMemberApplication,
+  deletePot,
+  requestJoinPot,
+  updatePotStatus,
+} from '@/lib/api'
 import { zoneLabel } from '@/lib/constants'
 import { getFoodEmoji } from '@/lib/food-emoji'
 import { haversineDistanceMeters } from '@/lib/geo'
@@ -24,7 +31,7 @@ import {
   formatDistance,
   formatWon,
 } from '@/lib/format'
-import type { MannerAvatarInfo, MannerReviewStatus, Participation, Pot } from '@/lib/types'
+import type { MannerAvatarInfo, MannerReviewStatus, Participation, Pot, PotCompletionStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import type { ViewerState } from '@/types/pot-member'
 
@@ -36,6 +43,7 @@ export function PotDetailView({
   mannerReviewStatus,
   hostMenuAmount = 0,
   hostManner,
+  completion,
 }: {
   pot: Pot
   participations: Participation[]
@@ -46,6 +54,8 @@ export function PotDetailView({
   hostMenuAmount?: number
   /** 참여자 목록에 노출할 방장의 매너 아바타 정보(v2.13) */
   hostManner?: MannerAvatarInfo
+  /** 거래 완료 확인 현황(먹튀 방지) — 모집 마감 후에만 채워진다 */
+  completion?: PotCompletionStatus
 }) {
   const router = useRouter()
   const [viewerState, setViewerState] = useState<ViewerState>(
@@ -55,6 +65,7 @@ export function PotDetailView({
   const [showConfirmSheet, setShowConfirmSheet] = useState(false)
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [shared, setShared] = useState(false)
 
   const deadline = formatDeadline(pot.deadlineAt)
@@ -133,6 +144,19 @@ export function PotDetailView({
       } finally {
         setLoading(false)
       }
+    }
+  }
+
+  async function handleConfirmComplete() {
+    if (!confirm('정산까지 모두 끝났나요? 확인하면 되돌릴 수 없어요.')) return
+    setConfirming(true)
+    try {
+      await confirmPotComplete(pot.id)
+      router.refresh()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '거래 완료 확인에 실패했어요.')
+    } finally {
+      setConfirming(false)
     }
   }
 
@@ -223,6 +247,27 @@ export function PotDetailView({
           <p className="text-sm text-muted-foreground">{zoneLabel(pot.zoneCode)}</p>
         </div>
       </section>
+
+      {/* 거래 완료 확인(먹튀 방지) — 모집 마감 후, 아직 전원 확인이 안 됐을 때만 */}
+      {completion && !completion.allConfirmed && completion.viewerIsMember && (
+        <div className="mx-4 flex flex-col gap-2 rounded-xl bg-primary/10 px-4 py-3">
+          <p className="text-sm font-semibold text-primary">
+            정산까지 끝났다면 거래 완료를 확인해 주세요 ({completion.done}/{completion.total}명 확인)
+          </p>
+          {completion.viewerConfirmed ? (
+            <p className="text-xs text-muted-foreground">확인 완료 · 다른 참여자를 기다리고 있어요.</p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleConfirmComplete}
+              disabled={confirming}
+              className="flex h-10 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground transition active:scale-[0.98] disabled:opacity-60"
+            >
+              {confirming ? '확인하는 중...' : '거래 완료 확인'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 매너평가 CTA — 주문 완료 후 아직 평가하지 않은 상대가 있을 때만 */}
       {pendingReviewCount > 0 && (
@@ -392,16 +437,23 @@ export function PotDetailView({
           )}
         </ul>
 
-        {isHost && participations.length === 0 && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={deleting}
-            className="mt-4 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-destructive/30 text-sm font-semibold text-destructive transition active:scale-[0.98] hover:bg-destructive/5 disabled:opacity-60"
-          >
-            <Trash2 className="size-4" />
-            {deleting ? '삭제 중...' : '모집글 삭제'}
-          </button>
+        {isHost && (participations.length === 0 || pot.status === 'ORDERED') && (
+          <div className="mt-4 flex flex-col gap-2">
+            {pot.status === 'ORDERED' && (
+              <p className="text-center text-xs text-muted-foreground">
+                전원이 거래 완료를 확인했어요. 이제 모집글을 삭제할 수 있어요.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-destructive/30 text-sm font-semibold text-destructive transition active:scale-[0.98] hover:bg-destructive/5 disabled:opacity-60"
+            >
+              <Trash2 className="size-4" />
+              {deleting ? '삭제 중...' : '모집글 삭제'}
+            </button>
+          </div>
         )}
       </section>
 
@@ -436,15 +488,18 @@ export function PotDetailView({
         </section>
       )}
 
-      {/* 하단 고정 CTA */}
-      <JoinButton
-        potId={pot.id}
-        viewerState={viewerState}
-        loading={loading}
-        onOpenConfirmSheet={() => setShowConfirmSheet(true)}
-        onCancelRequest={handleCancelRequest}
-        onHostAction={handleHostClose}
-      />
+      {/* 하단 고정 CTA — 방장은 OPEN(모집 마감하기) 상태에서만. 마감 후엔 위쪽 거래완료
+          확인 배너·삭제 버튼이 방장의 주 액션이라 여기서는 굳이 다시 노출하지 않는다 */}
+      {(!isHost || pot.status === 'OPEN') && (
+        <JoinButton
+          potId={pot.id}
+          viewerState={viewerState}
+          loading={loading}
+          onOpenConfirmSheet={() => setShowConfirmSheet(true)}
+          onCancelRequest={handleCancelRequest}
+          onHostAction={handleHostClose}
+        />
+      )}
 
       {/* 참여 신청 확인 시트 */}
       <JoinConfirmSheet

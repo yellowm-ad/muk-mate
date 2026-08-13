@@ -195,6 +195,15 @@ export interface MannerReviewStatus {
   targets: MannerReviewTarget[]
 }
 
+/** 거래 완료 확인(먹튀 방지) 현황 — 방장 포함 승인 참여자 전원이 확인해야 ORDERED로 전이된다 */
+export interface PotCompletionStatus {
+  total: number
+  done: number
+  allConfirmed: boolean
+  viewerConfirmed: boolean
+  viewerIsMember: boolean
+}
+
 export type NotificationType =
   | 'APPLICATION_SUBMITTED'
   | 'APPLICATION_RECEIVED'

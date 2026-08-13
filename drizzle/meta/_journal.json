@@ -50,6 +50,13 @@
       "when": 1786366304556,
       "tag": "0006_graceful_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786629463915,
+      "tag": "0007_sturdy_bulldozer",
+      "breakpoints": true
     }
   ]
 }

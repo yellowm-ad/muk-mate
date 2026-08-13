@@ -122,6 +122,9 @@ export const participations = pgTable(
     menuAmount: integer('menu_amount'), // P1: 분담 금액 계산용 (nullable)
     approvalStatus: approvalEnum('approval_status').notNull().default('PENDING'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // 거래 완료 확인(신규) — 호스트 포함 승인 참여자 전원이 각자 확인해야 CLOSED→ORDERED로 전이된다.
+    // 방장도 모집글 생성 시 APPROVED 참여자 행을 함께 가지므로 별도 컬럼 없이 여기서 같이 추적한다.
+    completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('participations_pot_user_key').on(table.potId, table.userId), // 중복 신청 방지

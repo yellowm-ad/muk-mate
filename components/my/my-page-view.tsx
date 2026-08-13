@@ -21,6 +21,7 @@ import {
 import { AppHeader } from '@/components/app-header'
 import { MannerAvatar } from '@/components/manner-avatar'
 import { MannerBadge } from '@/components/manner-badge'
+import { MannerGauge } from '@/components/manner-gauge'
 import { ApprovalBadge, PotStatusBadge } from '@/components/status-badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -57,53 +58,56 @@ export function MyPageView({
       <AppHeader title="마이" />
 
       {/* 1. 프로필 카드 */}
-      <div className="flex items-center gap-3 border-b border-border bg-card px-4 py-4">
-        <MannerAvatar
-          stage={manner.stage}
-          color={manner.avatarColor}
-          accessory={manner.avatarAccessory}
-          className="size-12"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-bold text-foreground">{me.nickname}</p>
-          <p className="text-sm text-muted-foreground">{zoneLabel(me.zoneCode)}</p>
-          <MannerBadge
+      <div className="flex flex-col gap-3 border-b border-border bg-card px-4 py-4">
+        <div className="flex items-center gap-3">
+          <MannerAvatar
             stage={manner.stage}
-            score={manner.score}
-            reviewCount={manner.reviewCount}
-            avatarColor={manner.avatarColor}
-            avatarAccessory={manner.avatarAccessory}
-            className="mt-1.5"
+            color={manner.avatarColor}
+            accessory={manner.avatarAccessory}
+            className="size-12"
           />
-          {manner.topTags.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {manner.topTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                >
-                  {MANNER_TAG_META.GOOD[tag] ?? tag}
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-bold text-foreground">{me.nickname}</p>
+            <p className="text-sm text-muted-foreground">{zoneLabel(me.zoneCode)}</p>
+            <MannerBadge
+              stage={manner.stage}
+              score={manner.score}
+              reviewCount={manner.reviewCount}
+              avatarColor={manner.avatarColor}
+              avatarAccessory={manner.avatarAccessory}
+              className="mt-1.5"
+            />
+            {manner.topTags.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {manner.topTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {MANNER_TAG_META.GOOD[tag] ?? tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <Link
+              href="/my/edit"
+              className="flex items-center gap-0.5 text-sm font-semibold text-primary transition hover:underline"
+            >
+              정보 수정
+              <ChevronRight className="size-4" />
+            </Link>
+            <Link
+              href="/my/avatar"
+              className="flex items-center gap-0.5 text-xs font-semibold text-muted-foreground transition hover:underline"
+            >
+              아바타 꾸미기
+              <ChevronRight className="size-3.5" />
+            </Link>
+          </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <Link
-            href="/my/edit"
-            className="flex items-center gap-0.5 text-sm font-semibold text-primary transition hover:underline"
-          >
-            정보 수정
-            <ChevronRight className="size-4" />
-          </Link>
-          <Link
-            href="/my/avatar"
-            className="flex items-center gap-0.5 text-xs font-semibold text-muted-foreground transition hover:underline"
-          >
-            아바타 꾸미기
-            <ChevronRight className="size-3.5" />
-          </Link>
-        </div>
+        <MannerGauge score={manner.score} stage={manner.stage} size="sm" />
       </div>
 
       {/* 2. 내 활동 요약 카드 */}

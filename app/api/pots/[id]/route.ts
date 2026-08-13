@@ -1,8 +1,8 @@
-import { and, count, eq, ne } from 'drizzle-orm'
+import { and, count, eq, inArray, ne } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
-import { chatRooms, messages, participations, pots } from '@/lib/db/schema'
+import { chatRooms, mannerEvents, mannerReviews, messages, participations, pots } from '@/lib/db/schema'
 import { createNotificationBulk } from '@/lib/notifications'
 import { cancelPotAndNotify, computeEffectiveStatus, getPotById, getSessionUserOrNull } from '@/lib/server-data'
 import type { PotStatus } from '@/lib/types'
@@ -238,7 +238,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id } = await params
   const db = getDb()
 
-  const [row] = await db.select({ hostId: pots.hostId }).from(pots).where(eq(pots.id, id)).limit(1)
+  const [row] = await db.select({ hostId: pots.hostId, status: pots.status }).from(pots).where(eq(pots.id, id)).limit(1)
   if (!row) {
     return NextResponse.json({ code: 'POT_NOT_FOUND', error: '존재하지 않는 모집글입니다.' }, { status: 404 })
   }
@@ -246,17 +246,27 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     return NextResponse.json({ code: 'FORBIDDEN', error: '모집자만 삭제할 수 있습니다.' }, { status: 403 })
   }
 
-  // 참여 신청(대기중 포함) 1건이라도 있으면 삭제 불가.
-  // 방장 본인도 모집글 생성 시 APPROVED 참여자로 함께 등록되므로(POST /api/pots) 집계에서 제외한다.
+  // 참여 신청(대기중 포함) 1건이라도 있으면 삭제 불가 — 단, 전원 거래 완료 확인을 거쳐 ORDERED가 된
+  // 경우는 예외(먹튀 방지 조치, confirmPotCompletion 참고). 방장 본인도 모집글 생성 시 APPROVED
+  // 참여자로 함께 등록되므로(POST /api/pots) 집계에서 제외한다.
   const [{ cnt }] = await db
     .select({ cnt: count() })
     .from(participations)
     .where(and(eq(participations.potId, id), ne(participations.userId, me.id)))
-  if (cnt > 0) {
+  if (cnt > 0 && row.status !== 'ORDERED') {
     return NextResponse.json(
-      { code: 'HAS_PARTICIPANTS', error: '참여 신청이 있는 모집글은 삭제할 수 없습니다.' },
+      { code: 'HAS_PARTICIPANTS', error: '참여자가 있는 모집글은 전원이 거래 완료를 확인해야 삭제할 수 있습니다.' },
       { status: 409 },
     )
+  }
+
+  // manner_reviews.pot_id → pots는 cascade지만 manner_events.review_id → manner_reviews는
+  // cascade가 아니라서(§10 평가는 감점 이력이라 기본 보존), 리뷰가 있으면 이벤트부터 지워야
+  // FK 위반 없이 pots를 삭제할 수 있다. 이미 manner_profiles에 반영된 점수 자체는 남는다 —
+  // 지우는 건 이 모집글에 달린 이벤트 로그 행뿐이다.
+  const reviews = await db.select({ id: mannerReviews.id }).from(mannerReviews).where(eq(mannerReviews.potId, id))
+  if (reviews.length > 0) {
+    await db.delete(mannerEvents).where(inArray(mannerEvents.reviewId, reviews.map((r) => r.id)))
   }
 
   await db.delete(pots).where(eq(pots.id, id))
