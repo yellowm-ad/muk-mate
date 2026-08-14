@@ -195,6 +195,56 @@ export function EditProfileView({
           )}
         </div>
 
+        <form
+          onSubmit={handleProfileSubmit}
+          className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm"
+        >
+          <h2 className="font-bold text-foreground">기본정보</h2>
+
+          {profileError && <p className="text-sm text-destructive">{profileError}</p>}
+          {profileSaved && <p className="text-sm text-status-ordered">저장했어요.</p>}
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground">닉네임</label>
+            <Input
+              value={nickname}
+              maxLength={12}
+              onChange={(e) => setNickname(e.target.value)}
+              className="h-11 rounded-xl"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground">활동 지역</label>
+            <div className="grid grid-cols-2 gap-2">
+              {ZONES.map((z) => (
+                <button
+                  key={z.code}
+                  type="button"
+                  onClick={() => setZoneCode(z.code)}
+                  className={cn(
+                    'flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition',
+                    zoneCode === z.code
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-background text-muted-foreground hover:border-primary/50',
+                  )}
+                >
+                  <MapPin className="size-3.5" />
+                  {z.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Button
+            type="submit"
+            disabled={profileSaving || !nickname.trim()}
+            className="h-11 w-full rounded-xl font-bold"
+          >
+            {profileSaving ? '저장하는 중...' : '기본정보 저장'}
+          </Button>
+        </form>
+
         <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
           <h2 className="font-bold text-foreground">아이디 변경</h2>
 
@@ -286,56 +336,6 @@ export function EditProfileView({
             </form>
           )}
         </div>
-
-        <form
-          onSubmit={handleProfileSubmit}
-          className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm"
-        >
-          <h2 className="font-bold text-foreground">기본정보</h2>
-
-          {profileError && <p className="text-sm text-destructive">{profileError}</p>}
-          {profileSaved && <p className="text-sm text-status-ordered">저장했어요.</p>}
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground">닉네임</label>
-            <Input
-              value={nickname}
-              maxLength={12}
-              onChange={(e) => setNickname(e.target.value)}
-              className="h-11 rounded-xl"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground">활동 지역</label>
-            <div className="grid grid-cols-2 gap-2">
-              {ZONES.map((z) => (
-                <button
-                  key={z.code}
-                  type="button"
-                  onClick={() => setZoneCode(z.code)}
-                  className={cn(
-                    'flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition',
-                    zoneCode === z.code
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border bg-background text-muted-foreground hover:border-primary/50',
-                  )}
-                >
-                  <MapPin className="size-3.5" />
-                  {z.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Button
-            type="submit"
-            disabled={profileSaving || !nickname.trim()}
-            className="h-11 w-full rounded-xl font-bold"
-          >
-            {profileSaving ? '저장하는 중...' : '기본정보 저장'}
-          </Button>
-        </form>
 
         <form
           onSubmit={handlePasswordSubmit}
