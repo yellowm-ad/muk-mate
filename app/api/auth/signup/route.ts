@@ -1,11 +1,12 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 
 import bcrypt from 'bcryptjs'
 
 import { getDb, getPgErrorCode } from '@/lib/db'
-import { emailVerifications, mannerProfiles, users, zones } from '@/lib/db/schema'
+import { mannerProfiles, users, zones } from '@/lib/db/schema'
 import { MANNER_AVATAR_COLOR_META } from '@/lib/constants'
+import { getValidVerification, markVerificationConsumed } from '@/lib/email-verification'
 import type { MannerAvatarColor } from '@/lib/types'
 
 const LOGIN_ID_MIN = 4
@@ -14,9 +15,6 @@ const PASSWORD_MIN = 4
 const PASSWORD_MAX = 16
 const NICKNAME_MAX = 12
 const JBNU_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@jbnu\.ac\.kr$/i
-// 인증 완료 후 이 시간 안에 가입을 마쳐야 한다 — 온보딩 나머지 단계(활동지역·아바타)를 채울 여유는 두되,
-// 오래 방치된 인증을 재사용하지 못하게 막는다.
-const VERIFICATION_REUSE_WINDOW_MS = 30 * 60 * 1000
 
 // Postgres unique_violation SQLSTATE — 중복확인을 통과했더라도 동시 가입 요청이 있을 수 있어 방어
 const UNIQUE_VIOLATION = '23505'
@@ -73,22 +71,8 @@ export async function POST(request: Request) {
   }
 
   // 서버가 직접 인증 여부를 재확인한다 — 클라이언트가 "인증됨" 플래그만 보내는 걸 신뢰하지 않는다.
-  const [verification] = await db
-    .select()
-    .from(emailVerifications)
-    .where(
-      and(
-        eq(emailVerifications.email, jbnuEmail),
-        isNull(emailVerifications.consumedAt),
-      ),
-    )
-    .orderBy(desc(emailVerifications.createdAt))
-    .limit(1)
-
-  if (
-    !verification?.verifiedAt ||
-    Date.now() - verification.verifiedAt.getTime() > VERIFICATION_REUSE_WINDOW_MS
-  ) {
+  const verification = await getValidVerification(jbnuEmail, 'SIGNUP')
+  if (!verification) {
     return NextResponse.json({ error: '이메일 인증을 다시 진행해 주세요.' }, { status: 409 })
   }
 
@@ -105,7 +89,7 @@ export async function POST(request: Request) {
     await db.insert(mannerProfiles).values({ userId: created.id, avatarColor }).onConflictDoNothing({ target: mannerProfiles.userId })
 
     // user insert가 먼저 성공한 뒤에만 소모 처리한다 — 실패하면 재시도 시 같은 인증을 다시 쓸 수 있어야 한다.
-    await db.update(emailVerifications).set({ consumedAt: new Date() }).where(eq(emailVerifications.id, verification.id))
+    await markVerificationConsumed(verification.id)
 
     return NextResponse.json({ user: created }, { status: 201 })
   } catch (err) {

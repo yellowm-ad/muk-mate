@@ -179,6 +179,32 @@ export async function changePassword(input: { currentPassword: string; newPasswo
   await parseJsonResponse<{ ok: true }>(res)
 }
 
+/** 아이디 변경: 본인 전북대 이메일로 인증번호 발송 요청 — POST /api/me/login-id/request-code */
+export async function requestLoginIdChangeCode(): Promise<void> {
+  const res = await fetch('/api/me/login-id/request-code', { method: 'POST' })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
+/** 아이디 변경: 인증번호 확인(즉시 피드백용) — POST /api/me/login-id/verify-code */
+export async function verifyLoginIdChangeCode(code: string): Promise<void> {
+  const res = await fetch('/api/me/login-id/verify-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
+/** 아이디 변경: 인증번호 재확인 + 현재 비밀번호 확인 후 실제 변경 — PATCH /api/me/login-id */
+export async function changeLoginId(input: { code: string; newLoginId: string; currentPassword: string }): Promise<void> {
+  const res = await fetch('/api/me/login-id', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
 /** 회원 탈퇴(소프트) — DELETE /api/me, 현재 비밀번호 확인 후 계정 비활성화 */
 export async function withdrawAccount(currentPassword: string): Promise<void> {
   const res = await fetch('/api/me', {

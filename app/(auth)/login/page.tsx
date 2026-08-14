@@ -95,7 +95,21 @@ function LoginForm() {
           </Button>
         </form>
 
-        <div className="mt-4 text-center">
+        <div className="mt-4 flex items-center justify-center gap-3 text-center">
+          <Link
+            href="/find-id"
+            className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            아이디 찾기
+          </Link>
+          <span className="text-border">·</span>
+          <Link
+            href="/find-password"
+            className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            비밀번호 찾기
+          </Link>
+          <span className="text-border">·</span>
           <Link
             href="/signup"
             className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"

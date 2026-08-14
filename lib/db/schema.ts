@@ -373,16 +373,26 @@ export const mannerEvents = pgTable('manner_events', {
 })
 
 // 전북대 이메일 인증(신규) — 발급된 인증번호 이력. rate limit도 이 테이블에서 직접 카운트한다(별도 인프라 없음).
+// purpose로 용도를 구분해, 한 목적으로 받은 코드가 다른 목적(예: 회원가입 코드로 비밀번호 변경)에
+// 재사용되지 않도록 막는다 — lib/email-verification.ts가 검증할 때 항상 purpose까지 같이 필터링한다.
+export const emailVerificationPurposeEnum = pgEnum('email_verification_purpose', [
+  'SIGNUP',
+  'FIND_ID',
+  'RESET_PASSWORD',
+  'CHANGE_LOGIN_ID',
+])
+
 export const emailVerifications = pgTable(
   'email_verifications',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     email: text('email').notNull(), // 소문자로 정규화해 저장
+    purpose: emailVerificationPurposeEnum('purpose').notNull().default('SIGNUP'),
     codeHash: text('code_hash').notNull(), // bcrypt 해시 — 비밀번호와 동일하게 평문 저장 금지
     attempts: integer('attempts').notNull().default(0),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
-    consumedAt: timestamp('consumed_at', { withTimezone: true }), // 실제 회원가입에 쓰인 시점
+    consumedAt: timestamp('consumed_at', { withTimezone: true }), // 실제로 쓰인(가입 완료·비밀번호 변경 등) 시점
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('idx_email_verifications_email_created').on(table.email, table.createdAt)],

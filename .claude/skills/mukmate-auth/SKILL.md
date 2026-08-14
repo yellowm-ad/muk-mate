@@ -24,5 +24,6 @@ No Clerk, no Descope, no Auth0, no OAuth/social login, no phone/SMS verification
 
 ## Deliberately NOT built (say so if asked, don't silently add it)
 
-- Password-reset / auto-recovery flow — there's no external verification channel (email/phone) to support one safely. The PRD accepts "if you lose your password, the account is unrecoverable" as a known MVP risk (§14 risk #6) and asks that this be stated explicitly in the signup UI copy, not solved with a workaround.
 - Persistent login should still work — a logged-in session must survive refresh (AUTH-05 implies staying logged in until explicit logout).
+
+**Exception (2026-08-14, see CLAUDE.md):** password-reset/auto-recovery was ALSO overridden, on top of the JBNU email exception above — accounts with a verified `jbnu_email` can now find their login ID (`/find-id`) and reset their password (`/find-password`) via the same email-code channel, and change their login ID from `/my/edit` (also requires a fresh code + current password). All four flows share `lib/email-verification.ts` (`requestVerificationCode`/`checkVerificationCode`/`getValidVerification`/`markVerificationConsumed`), keyed by a `purpose` column so a code issued for one purpose can't be replayed for another. Legacy accounts without `jbnu_email` still have no recovery path — PRD §14 risk #6 still applies to them specifically.

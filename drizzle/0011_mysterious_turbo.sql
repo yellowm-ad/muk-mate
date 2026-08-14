@@ -1,0 +1,2 @@
+CREATE TYPE "public"."email_verification_purpose" AS ENUM('SIGNUP', 'FIND_ID', 'RESET_PASSWORD', 'CHANGE_LOGIN_ID');--> statement-breakpoint
+ALTER TABLE "email_verifications" ADD COLUMN "purpose" "email_verification_purpose" DEFAULT 'SIGNUP' NOT NULL;

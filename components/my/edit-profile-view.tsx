@@ -1,17 +1,28 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { signOut, useSession } from 'next-auth/react'
-import { GraduationCap, MapPin } from 'lucide-react'
+import { Check, GraduationCap, Loader2, MapPin } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ZONES } from '@/lib/constants'
-import { changePassword, updateProfile, withdrawAccount } from '@/lib/api'
+import {
+  changeLoginId,
+  changePassword,
+  requestLoginIdChangeCode,
+  updateProfile,
+  verifyLoginIdChangeCode,
+  withdrawAccount,
+} from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import type { ZoneCode } from '@/lib/types'
 import { cn } from '@/lib/utils'
+
+const LOGIN_ID_MIN = 4
+const LOGIN_ID_MAX = 10
+const RESEND_COOLDOWN_SEC = 60
 
 export function EditProfileView({
   me,
@@ -28,6 +39,16 @@ export function EditProfileView({
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [profileSaved, setProfileSaved] = useState(false)
+
+  const [newLoginId, setNewLoginId] = useState('')
+  const [loginIdCode, setLoginIdCode] = useState('')
+  const [loginIdPhase, setLoginIdPhase] = useState<'input' | 'sent' | 'verified'>('input')
+  const [loginIdCurrentPassword, setLoginIdCurrentPassword] = useState('')
+  const [requestingLoginIdCode, setRequestingLoginIdCode] = useState(false)
+  const [verifyingLoginIdCode, setVerifyingLoginIdCode] = useState(false)
+  const [changingLoginId, setChangingLoginId] = useState(false)
+  const [loginIdError, setLoginIdError] = useState<string | null>(null)
+  const [loginIdResendCooldownSec, setLoginIdResendCooldownSec] = useState(0)
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -58,6 +79,55 @@ export function EditProfileView({
       setProfileError(err instanceof Error ? err.message : '저장에 실패했어요.')
     } finally {
       setProfileSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (loginIdResendCooldownSec <= 0) return
+    const t = setTimeout(() => setLoginIdResendCooldownSec((s) => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [loginIdResendCooldownSec])
+
+  async function handleRequestLoginIdCode() {
+    setRequestingLoginIdCode(true)
+    setLoginIdError(null)
+    try {
+      await requestLoginIdChangeCode()
+      setLoginIdPhase('sent')
+      setLoginIdResendCooldownSec(RESEND_COOLDOWN_SEC)
+    } catch (err) {
+      setLoginIdError(err instanceof Error ? err.message : '인증번호 발송에 실패했어요.')
+    } finally {
+      setRequestingLoginIdCode(false)
+    }
+  }
+
+  async function handleVerifyLoginIdCode() {
+    if (loginIdCode.length === 0) return
+    setVerifyingLoginIdCode(true)
+    setLoginIdError(null)
+    try {
+      await verifyLoginIdChangeCode(loginIdCode)
+      setLoginIdPhase('verified')
+    } catch (err) {
+      setLoginIdError(err instanceof Error ? err.message : '인증번호 확인에 실패했어요.')
+    } finally {
+      setVerifyingLoginIdCode(false)
+    }
+  }
+
+  async function handleChangeLoginIdSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setChangingLoginId(true)
+    setLoginIdError(null)
+    try {
+      await changeLoginId({ code: loginIdCode, newLoginId, currentPassword: loginIdCurrentPassword })
+      alert('아이디가 변경됐어요. 새 아이디로 다시 로그인해 주세요.')
+      await fetch('/api/auth/session-guard', { method: 'DELETE' })
+      await signOut({ callbackUrl: '/login' })
+    } catch (err) {
+      setLoginIdError(err instanceof Error ? err.message : '아이디 변경에 실패했어요.')
+      setChangingLoginId(false)
     }
   }
 
@@ -122,6 +192,98 @@ export function EditProfileView({
               전북대 이메일이 연동되어 있지 않아요. 이 계정은 회원가입 때 전북대 이메일 인증을 도입하기 전에
               가입했어요.
             </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <h2 className="font-bold text-foreground">아이디 변경</h2>
+
+          {!jbnuEmail ? (
+            <p className="text-sm text-muted-foreground">
+              전북대 이메일이 연동되지 않아 아이디를 변경할 수 없어요.
+            </p>
+          ) : (
+            <form onSubmit={handleChangeLoginIdSubmit} className="flex flex-col gap-3">
+              {loginIdError && <p className="text-sm text-destructive">{loginIdError}</p>}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">새 아이디 ({LOGIN_ID_MIN}~{LOGIN_ID_MAX}자)</label>
+                <Input
+                  value={newLoginId}
+                  maxLength={LOGIN_ID_MAX}
+                  onChange={(e) => setNewLoginId(e.target.value)}
+                  className="h-11 rounded-xl"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">
+                  이메일 인증 ({jbnuEmail.email})
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="인증번호 6자리"
+                    value={loginIdCode}
+                    disabled={loginIdPhase === 'verified'}
+                    onChange={(e) => setLoginIdCode(e.target.value.replace(/[^0-9]/g, ''))}
+                    className="h-11 rounded-xl"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={requestingLoginIdCode || loginIdPhase === 'verified' || loginIdResendCooldownSec > 0}
+                    onClick={handleRequestLoginIdCode}
+                    className="h-11 shrink-0 gap-1.5 rounded-xl px-3 text-sm font-semibold"
+                  >
+                    {requestingLoginIdCode && <Loader2 className="size-3.5 animate-spin" />}
+                    {loginIdPhase === 'input'
+                      ? '인증번호 받기'
+                      : loginIdResendCooldownSec > 0
+                        ? `재전송 ${loginIdResendCooldownSec}s`
+                        : '재전송'}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={verifyingLoginIdCode || loginIdPhase !== 'sent' || loginIdCode.length === 0}
+                    onClick={handleVerifyLoginIdCode}
+                    className="h-11 shrink-0 gap-1.5 rounded-xl px-3 text-sm font-semibold"
+                  >
+                    {verifyingLoginIdCode && <Loader2 className="size-3.5 animate-spin" />}
+                    확인
+                  </Button>
+                </div>
+                {loginIdPhase === 'verified' && (
+                  <p className="flex items-center gap-1 text-xs text-status-ordered">
+                    <Check className="size-3.5" /> 인증 완료
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">현재 비밀번호</label>
+                <Input
+                  type="password"
+                  value={loginIdCurrentPassword}
+                  onChange={(e) => setLoginIdCurrentPassword(e.target.value)}
+                  className="h-11 rounded-xl"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={
+                  changingLoginId ||
+                  loginIdPhase !== 'verified' ||
+                  newLoginId.length < LOGIN_ID_MIN ||
+                  !loginIdCurrentPassword
+                }
+                className="h-11 w-full rounded-xl font-bold"
+              >
+                {changingLoginId ? '변경하는 중...' : '아이디 변경'}
+              </Button>
+            </form>
           )}
         </div>
 

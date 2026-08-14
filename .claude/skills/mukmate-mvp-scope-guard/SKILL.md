@@ -15,9 +15,9 @@ Scope reference for MukMate's 5-day MVP sprint. Source of truth: `docs/PRD.md` �
 
 ## Hard non-goals (§12) — flag immediately if a request touches these
 
-No native app · no in-app payment/remittance/escrow/auto-settlement (the split-cost display shows numbers only, never triggers a transfer) · no direct delivery-app integration · no live/background location tracking or exposing a user's live location · no user-created public rooms (only the 2 fixed ones) · no AI food recommendation or auto-matching · no phone/SMS verification · no password-reset/auto-recovery · no separate restaurant/courier accounts · no ratings/tiers/points/coupons · no push notifications (in-app badge only).
+No native app · no in-app payment/remittance/escrow/auto-settlement (the split-cost display shows numbers only, never triggers a transfer) · no direct delivery-app integration · no live/background location tracking or exposing a user's live location · no user-created public rooms (only the 2 fixed ones) · no AI food recommendation or auto-matching · no phone/SMS verification · no separate restaurant/courier accounts · no ratings/tiers/points/coupons · no push notifications (in-app badge only).
 
-**Exception:** "no school/email verification" was overridden on 2026-08-14 for 전북대 이메일(@jbnu.ac.kr) signup verification only — see CLAUDE.md and `mukmate-auth`. Don't re-flag that specific feature; still flag phone/SMS verification or any other identity provider.
+**Exceptions (2026-08-14, see CLAUDE.md and `mukmate-auth`):** "no school/email verification" and "no password-reset/auto-recovery" were both overridden — 전북대 이메일(@jbnu.ac.kr) signup verification, `/find-id`, `/find-password`, and login-ID change (`/my/edit`) all now exist, gated on the account having a verified `jbnu_email`. Don't re-flag those specific features; still flag phone/SMS verification or any other identity provider.
 
 ## Schedule-risk cut order (§15) — if the sprint slips, cut in this order
 

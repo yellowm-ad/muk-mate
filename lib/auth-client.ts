@@ -58,3 +58,44 @@ export async function requestJbnuEmailCode(email: string) {
 export async function verifyJbnuEmailCode(email: string, code: string) {
   return postAuthJson('/api/auth/jbnu-email/verify', { email, code })
 }
+
+// ─────────────────────────────────────────────────────────────
+// 아이디 찾기 / 비밀번호 찾기 — 둘 다 비로그인 상태에서 쓴다.
+// ─────────────────────────────────────────────────────────────
+
+/** 아이디 찾기: 이메일로 인증번호 발송 요청 */
+export async function requestFindIdCode(email: string) {
+  return postAuthJson('/api/auth/find-id/request', { email })
+}
+
+/** 아이디 찾기: 인증번호 확인 후 로그인 아이디 반환 */
+export async function verifyFindIdCode(
+  email: string,
+  code: string,
+): Promise<{ ok: true; loginId: string } | { ok: false; error: string }> {
+  const res = await fetch('/api/auth/find-id/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  })
+  const data = (await res.json().catch(() => null)) as { loginId?: string; error?: string } | null
+  if (!res.ok || !data?.loginId) {
+    return { ok: false, error: data?.error ?? '요청에 실패했습니다.' }
+  }
+  return { ok: true, loginId: data.loginId }
+}
+
+/** 비밀번호 찾기: 아이디+이메일로 인증번호 발송 요청 */
+export async function requestResetPasswordCode(loginId: string, email: string) {
+  return postAuthJson('/api/auth/reset-password/request', { loginId, email })
+}
+
+/** 비밀번호 찾기: 인증번호 확인(UI 즉시 피드백용 — 아직 소모하지 않음) */
+export async function verifyResetPasswordCode(loginId: string, email: string, code: string) {
+  return postAuthJson('/api/auth/reset-password/verify', { loginId, email, code })
+}
+
+/** 비밀번호 찾기: 인증번호 재확인 + 새 비밀번호로 실제 변경 */
+export async function confirmResetPassword(loginId: string, email: string, code: string, newPassword: string) {
+  return postAuthJson('/api/auth/reset-password/confirm', { loginId, email, code, newPassword })
+}

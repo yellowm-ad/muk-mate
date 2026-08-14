@@ -15,12 +15,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '전북대 이메일(@jbnu.ac.kr)만 사용할 수 있습니다.' }, { status: 400 })
   }
 
-  const [existingUser] = await getDb().select({ id: users.id }).from(users).where(eq(users.jbnuEmail, email)).limit(1)
-  if (existingUser) {
-    return NextResponse.json({ error: '이미 사용 중인 전북대 이메일입니다.' }, { status: 409 })
+  const [user] = await getDb().select({ id: users.id }).from(users).where(eq(users.jbnuEmail, email)).limit(1)
+  if (!user) {
+    return NextResponse.json({ error: '해당 이메일로 가입된 계정을 찾을 수 없습니다.' }, { status: 404 })
   }
 
-  const result = await requestVerificationCode(email, 'SIGNUP')
+  const result = await requestVerificationCode(email, 'FIND_ID')
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })
   }

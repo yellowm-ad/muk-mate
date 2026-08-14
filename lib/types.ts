@@ -11,6 +11,7 @@ export type RoomType = 'ORDER' | 'COMMUNITY' | 'DM'
 export type MessageType = 'TEXT' | 'SYSTEM'
 
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DISABLED'
+export type EmailVerificationPurpose = 'SIGNUP' | 'FIND_ID' | 'RESET_PASSWORD' | 'CHANGE_LOGIN_ID'
 export type ReportReason =
   | 'HARASSMENT'
   | 'SEXUAL_CONTENT'
