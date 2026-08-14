@@ -429,6 +429,20 @@ export async function respondToFriendRequest(requestId: string, action: 'accept'
   await parseJsonResponse<{ ok: true }>(res)
 }
 
+/** 환경설정(알림·친구 자동수락) 변경 — PATCH /api/me/preferences */
+export async function updatePreferences(patch: {
+  potNotificationsEnabled?: boolean
+  friendNotificationsEnabled?: boolean
+  autoAcceptFriendRequests?: boolean
+}): Promise<void> {
+  const res = await fetch('/api/me/preferences', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  await parseJsonResponse<{ ok: true }>(res)
+}
+
 /** 차단 목록 — GET /api/blocks */
 export async function getBlockedUsers(): Promise<FriendSummary[]> {
   const res = await fetch('/api/blocks')

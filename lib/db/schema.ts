@@ -289,6 +289,18 @@ export const userBlocks = pgTable(
   (table) => [uniqueIndex('user_blocks_pair_key').on(table.blockerId, table.blockedId)],
 )
 
+// 사용자 환경설정(신규) — 1:1 확장 테이블(manner_profiles와 같은 패턴). 행이 없으면 전부 기본값으로
+// 취급한다 — 설정을 실제로 바꾼 사용자만 upsert로 행이 생긴다.
+export const userPreferences = pgTable('user_preferences', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  potNotificationsEnabled: boolean('pot_notifications_enabled').notNull().default(true),
+  friendNotificationsEnabled: boolean('friend_notifications_enabled').notNull().default(true),
+  autoAcceptFriendRequests: boolean('auto_accept_friend_requests').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const notifications = pgTable(
   'notifications',
   {

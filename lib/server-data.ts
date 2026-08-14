@@ -20,6 +20,7 @@ import {
   pots,
   roomReads,
   userBlocks,
+  userPreferences,
   users,
 } from '@/lib/db/schema'
 import { formatDateTime } from '@/lib/format'
@@ -685,6 +686,20 @@ export async function getMyJbnuEmailStatus(userId: string): Promise<{ email: str
 
   if (!row?.jbnuEmail || !row.jbnuEmailVerifiedAt) return null
   return { email: row.jbnuEmail, verifiedAt: row.jbnuEmailVerifiedAt.toISOString() }
+}
+
+/** 마이페이지 > 환경설정 화면들의 초기값 — 행이 없으면 기본값(전부 켜짐, 자동수락은 꺼짐)으로 취급. */
+export async function getMyPreferences(userId: string): Promise<{
+  potNotificationsEnabled: boolean
+  friendNotificationsEnabled: boolean
+  autoAcceptFriendRequests: boolean
+}> {
+  const [row] = await getDb().select().from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1)
+  return {
+    potNotificationsEnabled: row?.potNotificationsEnabled ?? true,
+    friendNotificationsEnabled: row?.friendNotificationsEnabled ?? true,
+    autoAcceptFriendRequests: row?.autoAcceptFriendRequests ?? false,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1674,8 +1689,33 @@ export async function sendFriendRequest(requesterId: string, addresseeId: string
     return { ok: true, status: 'ACCEPTED' }
   }
 
-  const [row] = await db.insert(friendRequests).values({ requesterId, addresseeId }).returning()
+  // 상대가 "친구신청 자동수락"을 켜뒀다면 대기 없이 바로 친구가 된다(마이페이지 > 환경설정 > 친구 설정).
+  const [addresseePrefs] = await db
+    .select({ autoAcceptFriendRequests: userPreferences.autoAcceptFriendRequests })
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, addresseeId))
+    .limit(1)
+  const autoAccept = addresseePrefs?.autoAcceptFriendRequests ?? false
+
   const me = await getPublicUserProfile(requesterId)
+
+  if (autoAccept) {
+    const [row] = await db
+      .insert(friendRequests)
+      .values({ requesterId, addresseeId, status: 'ACCEPTED', respondedAt: new Date() })
+      .returning()
+    await createNotification(db, {
+      recipientId: addresseeId,
+      type: 'FRIEND_REQUEST_ACCEPTED',
+      title: '친구가 되었어요',
+      body: `${me?.nickname ?? '상대방'}님과 친구가 되었어요.`,
+      actionPath: '/my/friends',
+      dedupeKey: `FRIEND_REQUEST_ACCEPTED:${row.id}:${addresseeId}`,
+    })
+    return { ok: true, status: 'ACCEPTED' }
+  }
+
+  const [row] = await db.insert(friendRequests).values({ requesterId, addresseeId }).returning()
   await createNotification(db, {
     recipientId: addresseeId,
     type: 'FRIEND_REQUEST_RECEIVED',
