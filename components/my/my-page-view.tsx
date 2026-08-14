@@ -74,6 +74,7 @@ export function MyPageView({
               reviewCount={manner.reviewCount}
               avatarColor={manner.avatarColor}
               avatarAccessory={manner.avatarAccessory}
+              hideStageLabel
               className="mt-1.5"
             />
             {manner.topTags.length > 0 && (

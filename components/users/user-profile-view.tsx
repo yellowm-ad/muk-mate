@@ -105,6 +105,7 @@ export function UserProfileView({
           reviewCount={manner.reviewCount}
           avatarColor={manner.avatarColor}
           avatarAccessory={manner.avatarAccessory}
+          hideStageLabel
         />
         {manner.topTags.length > 0 && (
           <div className="flex flex-wrap justify-center gap-1">

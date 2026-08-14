@@ -18,6 +18,7 @@ export function MannerBadge({
   avatarColor,
   avatarAccessory,
   className,
+  hideStageLabel,
 }: {
   stage: MannerStage
   /** null이면(리뷰 3개 미만) 점수는 표시하지 않는다(§4-1) */
@@ -27,12 +28,20 @@ export function MannerBadge({
   avatarColor?: MannerAvatarColor
   avatarAccessory?: MannerAvatarAccessory
   className?: string
+  /** 바로 아래 MannerGauge가 단계 이름을 이미 보여주는 화면(마이페이지·공개 프로필)에서 줄바꿈/글자 넘침을 막기 위해 중복 표기를 뺀다 */
+  hideStageLabel?: boolean
 }) {
   const meta = MANNER_STAGE_META[stage]
   const accessoryEmoji = avatarAccessory ? MANNER_AVATAR_ACCESSORY_META[avatarAccessory].emoji : ''
-  const label = score !== null ? `매너 포만도 ${Math.round(score)}점 · ${meta.label}` : meta.label
+  const label = hideStageLabel
+    ? score !== null
+      ? `포만도 ${Math.round(score)}점`
+      : ''
+    : score !== null
+      ? `매너 포만도 ${Math.round(score)}점 · ${meta.label}`
+      : meta.label
   // §12-1: "평가 개수"는 호버 툴팁이 아니라 화면에 항상 보이는 텍스트여야 한다 — 모바일엔 호버가 없다.
-  const countSuffix = typeof reviewCount === 'number' ? ` · 평가 ${reviewCount}개` : ''
+  const countSuffix = typeof reviewCount === 'number' ? `${label ? ' · ' : ''}평가 ${reviewCount}개` : ''
 
   return (
     <span
