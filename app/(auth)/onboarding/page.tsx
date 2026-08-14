@@ -3,24 +3,28 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { signIn } from 'next-auth/react'
-import { Check, Loader2, MapPin, Navigation } from 'lucide-react'
+import { Check, Loader2, Mail, MapPin, Navigation } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { MannerAvatar } from '@/components/manner-avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MANNER_AVATAR_COLOR_META, SIGNUP_DRAFT_KEY, ZONES } from '@/lib/constants'
-import { signup } from '@/lib/auth-client'
+import { requestJbnuEmailCode, signup, verifyJbnuEmailCode } from '@/lib/auth-client'
 import type { MannerAvatarColor, ZoneCode } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const COLOR_OPTIONS = Object.keys(MANNER_AVATAR_COLOR_META) as MannerAvatarColor[]
-const TOTAL_STEPS = 3
+const TOTAL_STEPS = 4
+const RESEND_COOLDOWN_SEC = 60
+const JBNU_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@jbnu\.ac\.kr$/i
 
 interface SignupDraft {
   loginId: string
   password: string
   nickname: string
 }
+
+type EmailPhase = 'input' | 'sent' | 'verified'
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -32,6 +36,15 @@ export default function OnboardingPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // 전북대 이메일 인증 (2단계)
+  const [jbnuEmail, setJbnuEmail] = useState('')
+  const [emailPhase, setEmailPhase] = useState<EmailPhase>('input')
+  const [code, setCode] = useState('')
+  const [sendingCode, setSendingCode] = useState(false)
+  const [verifyingCode, setVerifyingCode] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [resendCooldownSec, setResendCooldownSec] = useState(0)
 
   useEffect(() => {
     const raw = sessionStorage.getItem(SIGNUP_DRAFT_KEY)
@@ -54,8 +67,44 @@ export default function OnboardingPage() {
     return () => clearTimeout(t)
   }, [toast])
 
+  useEffect(() => {
+    if (resendCooldownSec <= 0) return
+    const t = setTimeout(() => setResendCooldownSec((s) => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [resendCooldownSec])
+
+  async function handleSendCode() {
+    if (!JBNU_EMAIL_RE.test(jbnuEmail)) {
+      setEmailError('전북대 이메일(@jbnu.ac.kr)을 입력해 주세요.')
+      return
+    }
+    setSendingCode(true)
+    setEmailError(null)
+    const result = await requestJbnuEmailCode(jbnuEmail)
+    setSendingCode(false)
+    if (!result.ok) {
+      setEmailError(result.error)
+      return
+    }
+    setEmailPhase('sent')
+    setResendCooldownSec(RESEND_COOLDOWN_SEC)
+  }
+
+  async function handleVerifyCode() {
+    if (code.length === 0) return
+    setVerifyingCode(true)
+    setEmailError(null)
+    const result = await verifyJbnuEmailCode(jbnuEmail, code)
+    setVerifyingCode(false)
+    if (!result.ok) {
+      setEmailError(result.error)
+      return
+    }
+    setEmailPhase('verified')
+  }
+
   async function handleFinish() {
-    if (!draft || !zone) return
+    if (!draft || !zone || emailPhase !== 'verified') return
     setSubmitting(true)
     setSubmitError(null)
 
@@ -65,6 +114,7 @@ export default function OnboardingPage() {
       nickname,
       zoneCode: zone,
       avatarColor,
+      jbnuEmail,
     })
     if (!result.ok) {
       setSubmitError(result.error)
@@ -94,7 +144,17 @@ export default function OnboardingPage() {
     router.push('/pots')
   }
 
+  const canProceed =
+    step === 1
+      ? nickname.trim().length > 0
+      : step === 2
+        ? emailPhase === 'verified'
+        : step === 3
+          ? zone !== null
+          : true
+
   function handleNext() {
+    if (!canProceed) return
     if (step < TOTAL_STEPS) {
       setStep(step + 1)
       return
@@ -112,9 +172,9 @@ export default function OnboardingPage() {
         onBack={() => setStep(step - 1)}
       />
 
-      {/* 진행 인디케이터 (3단계) */}
+      {/* 진행 인디케이터 */}
       <div className="flex items-center gap-2 px-6 pt-4">
-        {[1, 2, 3].map((s) => (
+        {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((s) => (
           <div
             key={s}
             className={cn(
@@ -147,6 +207,97 @@ export default function OnboardingPage() {
             </div>
           </div>
         ) : step === 2 ? (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-xl font-bold text-foreground text-balance">
+              전북대 이메일을 인증해 주세요
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              @jbnu.ac.kr 이메일로 받은 인증번호를 입력하면 가입할 수 있어요.
+            </p>
+
+            <div className="mt-4 flex flex-col gap-1.5">
+              <label htmlFor="jbnuEmail" className="text-sm font-semibold text-foreground">
+                전북대 이메일
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="jbnuEmail"
+                  type="email"
+                  value={jbnuEmail}
+                  placeholder="202012345@jbnu.ac.kr"
+                  disabled={emailPhase === 'verified'}
+                  onChange={(e) => {
+                    setJbnuEmail(e.target.value)
+                    setEmailError(null)
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={
+                    emailPhase === 'verified' ||
+                    sendingCode ||
+                    !JBNU_EMAIL_RE.test(jbnuEmail) ||
+                    resendCooldownSec > 0
+                  }
+                  onClick={handleSendCode}
+                  className="h-12 shrink-0 gap-1.5 rounded-xl px-3 text-sm font-semibold transition active:scale-[0.98]"
+                >
+                  {sendingCode && <Loader2 className="size-3.5 animate-spin" />}
+                  {emailPhase === 'input'
+                    ? '인증번호 받기'
+                    : resendCooldownSec > 0
+                      ? `재전송 ${resendCooldownSec}s`
+                      : '재전송'}
+                </Button>
+              </div>
+            </div>
+
+            {emailPhase !== 'input' && (
+              <div className="mt-2 flex flex-col gap-1.5">
+                <label htmlFor="code" className="text-sm font-semibold text-foreground">
+                  인증번호
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    id="code"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={code}
+                    placeholder="6자리 숫자"
+                    disabled={emailPhase === 'verified'}
+                    onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ''))}
+                  />
+                  <Button
+                    type="button"
+                    disabled={emailPhase === 'verified' || verifyingCode || code.length === 0}
+                    onClick={handleVerifyCode}
+                    className="h-12 shrink-0 gap-1.5 rounded-xl px-3 text-sm font-semibold transition active:scale-[0.98]"
+                  >
+                    {verifyingCode && <Loader2 className="size-3.5 animate-spin" />}
+                    확인
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {emailPhase === 'verified' ? (
+              <p className="mt-1 flex items-center gap-1 text-xs text-status-ordered">
+                <Check className="size-3.5" /> 인증 완료: {jbnuEmail}
+              </p>
+            ) : emailError ? (
+              <p className="mt-1 text-xs text-destructive">{emailError}</p>
+            ) : emailPhase === 'sent' ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                메일함(스팸함 포함)에서 인증번호를 확인해 주세요. 10분간 유효해요.
+              </p>
+            ) : (
+              <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                <Mail className="size-3.5" /> 학교 이메일로만 가입할 수 있어요.
+              </p>
+            )}
+          </div>
+        ) : step === 3 ? (
           <div className="flex flex-col gap-2">
             <h2 className="text-xl font-bold text-foreground text-balance">
               주로 활동하는 지역을 골라주세요
@@ -254,7 +405,7 @@ export default function OnboardingPage() {
           <Button
             type="button"
             onClick={handleNext}
-            disabled={(step === 2 && !zone) || submitting}
+            disabled={!canProceed || submitting}
             className="h-12 w-full gap-1.5 rounded-xl text-base font-bold transition active:scale-[0.98]"
           >
             {step < TOTAL_STEPS ? (

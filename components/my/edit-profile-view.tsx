@@ -3,16 +3,23 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { signOut, useSession } from 'next-auth/react'
-import { MapPin } from 'lucide-react'
+import { GraduationCap, MapPin } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ZONES } from '@/lib/constants'
 import { changePassword, updateProfile, withdrawAccount } from '@/lib/api'
+import { formatDateTime } from '@/lib/format'
 import type { ZoneCode } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-export function EditProfileView({ me }: { me: { nickname: string; zoneCode: ZoneCode } }) {
+export function EditProfileView({
+  me,
+  jbnuEmail,
+}: {
+  me: { nickname: string; zoneCode: ZoneCode }
+  jbnuEmail: { email: string; verifiedAt: string } | null
+}) {
   const router = useRouter()
   const { update } = useSession()
 
@@ -100,6 +107,24 @@ export function EditProfileView({ me }: { me: { nickname: string; zoneCode: Zone
       <AppHeader title="기본정보·비밀번호 수정" showBack />
 
       <div className="flex flex-col gap-6 p-4">
+        <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <h2 className="flex items-center gap-1.5 font-bold text-foreground">
+            <GraduationCap className="size-4" /> 학교 인증
+          </h2>
+          {jbnuEmail ? (
+            <p className="text-sm text-muted-foreground">
+              전북대 이메일 인증됨 — <span className="font-semibold text-foreground">{jbnuEmail.email}</span>
+              <br />
+              <span className="text-xs">{formatDateTime(jbnuEmail.verifiedAt)} 인증</span>
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              전북대 이메일이 연동되어 있지 않아요. 이 계정은 회원가입 때 전북대 이메일 인증을 도입하기 전에
+              가입했어요.
+            </p>
+          )}
+        </div>
+
         <form
           onSubmit={handleProfileSubmit}
           className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm"

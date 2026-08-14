@@ -1,10 +1,10 @@
-import { eq } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 
 import bcrypt from 'bcryptjs'
 
 import { getDb, getPgErrorCode } from '@/lib/db'
-import { mannerProfiles, users, zones } from '@/lib/db/schema'
+import { emailVerifications, mannerProfiles, users, zones } from '@/lib/db/schema'
 import { MANNER_AVATAR_COLOR_META } from '@/lib/constants'
 import type { MannerAvatarColor } from '@/lib/types'
 
@@ -13,6 +13,10 @@ const LOGIN_ID_MAX = 10
 const PASSWORD_MIN = 4
 const PASSWORD_MAX = 16
 const NICKNAME_MAX = 12
+const JBNU_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@jbnu\.ac\.kr$/i
+// 인증 완료 후 이 시간 안에 가입을 마쳐야 한다 — 온보딩 나머지 단계(활동지역·아바타)를 채울 여유는 두되,
+// 오래 방치된 인증을 재사용하지 못하게 막는다.
+const VERIFICATION_REUSE_WINDOW_MS = 30 * 60 * 1000
 
 // Postgres unique_violation SQLSTATE — 중복확인을 통과했더라도 동시 가입 요청이 있을 수 있어 방어
 const UNIQUE_VIOLATION = '23505'
@@ -27,6 +31,7 @@ export async function POST(request: Request) {
   const password = typeof body.password === 'string' ? body.password : ''
   const nickname = typeof body.nickname === 'string' ? body.nickname.trim() : ''
   const zoneCode = typeof body.zoneCode === 'string' ? body.zoneCode : ''
+  const jbnuEmail = typeof body.jbnuEmail === 'string' ? body.jbnuEmail.trim().toLowerCase() : ''
   // v2.15: 온보딩에서 아바타 색상을 함께 고를 수 있다(선택) — 잘못된 값이 와도 가입 자체는 막지 않고 기본값으로 처리
   const avatarColor: MannerAvatarColor =
     typeof body.avatarColor === 'string' && body.avatarColor in MANNER_AVATAR_COLOR_META
@@ -51,6 +56,9 @@ export async function POST(request: Request) {
   if (!zoneCode) {
     return NextResponse.json({ error: '활동 지역을 선택해 주세요.' }, { status: 400 })
   }
+  if (!JBNU_EMAIL_RE.test(jbnuEmail)) {
+    return NextResponse.json({ error: '전북대 이메일 인증을 완료해 주세요.' }, { status: 400 })
+  }
 
   const db = getDb()
 
@@ -64,23 +72,49 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '이미 사용 중인 아이디입니다.' }, { status: 409 })
   }
 
+  // 서버가 직접 인증 여부를 재확인한다 — 클라이언트가 "인증됨" 플래그만 보내는 걸 신뢰하지 않는다.
+  const [verification] = await db
+    .select()
+    .from(emailVerifications)
+    .where(
+      and(
+        eq(emailVerifications.email, jbnuEmail),
+        isNull(emailVerifications.consumedAt),
+      ),
+    )
+    .orderBy(desc(emailVerifications.createdAt))
+    .limit(1)
+
+  if (
+    !verification?.verifiedAt ||
+    Date.now() - verification.verifiedAt.getTime() > VERIFICATION_REUSE_WINDOW_MS
+  ) {
+    return NextResponse.json({ error: '이메일 인증을 다시 진행해 주세요.' }, { status: 409 })
+  }
+
   const passwordHash = await bcrypt.hash(password, 10)
 
   try {
     const [created] = await db
       .insert(users)
-      .values({ loginId, passwordHash, nickname, zoneCode })
+      .values({ loginId, passwordHash, nickname, zoneCode, jbnuEmail, jbnuEmailVerifiedAt: verification.verifiedAt })
       .returning({ id: users.id, nickname: users.nickname, zoneCode: users.zoneCode })
 
     // 매너 프로필은 첫 접근 시 lazy 생성이 기본(ensureMannerProfile)이지만, 온보딩에서 고른
     // 색상을 반영하려면 가입 시점에 먼저 만들어 둬야 한다 — 소품은 기본값(NONE) 그대로.
     await db.insert(mannerProfiles).values({ userId: created.id, avatarColor }).onConflictDoNothing({ target: mannerProfiles.userId })
 
+    // user insert가 먼저 성공한 뒤에만 소모 처리한다 — 실패하면 재시도 시 같은 인증을 다시 쓸 수 있어야 한다.
+    await db.update(emailVerifications).set({ consumedAt: new Date() }).where(eq(emailVerifications.id, verification.id))
+
     return NextResponse.json({ user: created }, { status: 201 })
   } catch (err) {
     const code = getPgErrorCode(err)
     if (code === UNIQUE_VIOLATION) {
-      return NextResponse.json({ error: '이미 사용 중인 아이디입니다.' }, { status: 409 })
+      const message = /jbnu_email/.test(String((err as { cause?: { constraint?: string } })?.cause?.constraint ?? ''))
+        ? '이미 사용 중인 전북대 이메일입니다.'
+        : '이미 사용 중인 아이디입니다.'
+      return NextResponse.json({ error: message }, { status: 409 })
     }
     throw err
   }

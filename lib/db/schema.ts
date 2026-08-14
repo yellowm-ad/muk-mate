@@ -58,18 +58,26 @@ export const zones = pgTable('zones', {
   sortOrder: smallint('sort_order').notNull().default(0),
 })
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  loginId: text('login_id').notNull().unique(), // 외부에 노출하지 않음 — 표시는 nickname만
-  passwordHash: text('password_hash').notNull(), // bcrypt 해시, 평문 저장 금지
-  nickname: text('nickname').notNull(),
-  zoneCode: text('zone_code')
-    .notNull()
-    .references(() => zones.code), // PRD §5-3: 활동 지역은 회원가입 필수 정보
-  accountStatus: accountStatusEnum('account_status').notNull().default('ACTIVE'),
-  role: userRoleEnum('role').notNull().default('USER'), // 관리자 권한 검증 전용 — 셀프서비스로 바꿀 수 없음(DB에서 직접 부여)
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    loginId: text('login_id').notNull().unique(), // 외부에 노출하지 않음 — 표시는 nickname만
+    passwordHash: text('password_hash').notNull(), // bcrypt 해시, 평문 저장 금지
+    nickname: text('nickname').notNull(),
+    zoneCode: text('zone_code')
+      .notNull()
+      .references(() => zones.code), // PRD §5-3: 활동 지역은 회원가입 필수 정보
+    accountStatus: accountStatusEnum('account_status').notNull().default('ACTIVE'),
+    role: userRoleEnum('role').notNull().default('USER'), // 관리자 권한 검증 전용 — 셀프서비스로 바꿀 수 없음(DB에서 직접 부여)
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // 전북대 이메일 인증(신규, 2026-08-14 CLAUDE.md 참고) — 기존 계정은 NULL로 남고 신규 가입자만 채워진다.
+    // 관리자 화면에서만 노출하고, 본인은 마이페이지 기본정보 수정에서만 확인 가능 — 다른 사용자에게는 절대 노출 금지.
+    jbnuEmail: text('jbnu_email'),
+    jbnuEmailVerifiedAt: timestamp('jbnu_email_verified_at', { withTimezone: true }),
+  },
+  (table) => [uniqueIndex('users_jbnu_email_key').on(table.jbnuEmail)],
+)
 
 export const pots = pgTable(
   'pots',
@@ -363,6 +371,22 @@ export const mannerEvents = pgTable('manner_events', {
   delta: numeric('delta', { precision: 5, scale: 2 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// 전북대 이메일 인증(신규) — 발급된 인증번호 이력. rate limit도 이 테이블에서 직접 카운트한다(별도 인프라 없음).
+export const emailVerifications = pgTable(
+  'email_verifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: text('email').notNull(), // 소문자로 정규화해 저장
+    codeHash: text('code_hash').notNull(), // bcrypt 해시 — 비밀번호와 동일하게 평문 저장 금지
+    attempts: integer('attempts').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }), // 실제 회원가입에 쓰인 시점
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_email_verifications_email_created').on(table.email, table.createdAt)],
+)
 
 // re-export for callers that want a raw sql tag without importing drizzle-orm directly
 export { sql }

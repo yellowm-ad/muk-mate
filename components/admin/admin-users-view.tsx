@@ -123,6 +123,14 @@ export function AdminUsersView({
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {zoneLabel(u.zoneCode)} · 가입 {formatDateTime(u.createdAt)}
                 </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  전북대 이메일:{' '}
+                  {u.jbnuEmail ? (
+                    <span className="text-foreground">{u.jbnuEmail}</span>
+                  ) : (
+                    '미연동'
+                  )}
+                </p>
               </div>
 
               {u.id === currentAdminId ? (

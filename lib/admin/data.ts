@@ -76,6 +76,9 @@ export interface AdminUserItem {
   role: UserRole
   accountStatus: AccountStatus
   createdAt: string
+  // 전북대 이메일 인증(신규) — 관리자 화면에서만 노출한다. 기존 계정은 null.
+  jbnuEmail: string | null
+  jbnuEmailVerifiedAt: string | null
 }
 
 /** 관리자 회원 목록 — 최신 가입순 */
@@ -91,6 +94,8 @@ export async function getUsersForAdmin(): Promise<AdminUserItem[]> {
       role: users.role,
       accountStatus: users.accountStatus,
       createdAt: users.createdAt,
+      jbnuEmail: users.jbnuEmail,
+      jbnuEmailVerifiedAt: users.jbnuEmailVerifiedAt,
     })
     .from(users)
     .orderBy(desc(users.createdAt))
@@ -103,6 +108,8 @@ export async function getUsersForAdmin(): Promise<AdminUserItem[]> {
     role: r.role as UserRole,
     accountStatus: r.accountStatus as AccountStatus,
     createdAt: r.createdAt.toISOString(),
+    jbnuEmail: r.jbnuEmail,
+    jbnuEmailVerifiedAt: r.jbnuEmailVerifiedAt?.toISOString() ?? null,
   }))
 }
 

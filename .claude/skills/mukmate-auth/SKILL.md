@@ -9,7 +9,9 @@ Reference auth design for MukMate. Source of truth: `docs/PRD.md` §5-3, §8-1, 
 
 **Auth.js (NextAuth) Credentials provider + bcrypt. That's it.**
 
-No Clerk, no Descope, no Auth0, no OAuth/social login, no phone/email/SMS verification, no school-affiliation check. These are explicit, deliberate non-goals (§12, AUTH-07) — not an oversight to "fix" by adding a provider. If a task seems to call for one of these, it's out of scope; flag it rather than implementing it.
+No Clerk, no Descope, no Auth0, no OAuth/social login, no phone/SMS verification, no general school-affiliation check. These are explicit, deliberate non-goals (§12, AUTH-07) — not an oversight to "fix" by adding a provider. If a task seems to call for one of these, it's out of scope; flag it rather than implementing it.
+
+**Exception (2026-08-14, see CLAUDE.md):** signup now requires 전북대 이메일(@jbnu.ac.kr) verification via a Resend-sent one-time code (`app/api/auth/jbnu-email/*`, `lib/email.ts`) — this is a deliberate, user-approved override of the §12/AUTH-07 non-goal, scoped narrowly to JBNU email only (still no phone/SMS, still no password-reset flow). New signups only; existing accounts are unaffected. The email is admin-only visible (`/admin/users`) plus a self-view on `/my/edit` — never shown to other users or carried in the session/JWT.
 
 ## Required fields & rules (§5-3, §8-1)
 

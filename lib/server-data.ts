@@ -671,6 +671,22 @@ export async function getSessionUserOrNull(): Promise<User | null> {
   }
 }
 
+/**
+ * 전북대 이메일 연동 상태(본인 확인용, 마이페이지 기본정보 수정 화면 전용).
+ * 세션/JWT나 공용 User 타입에는 절대 싣지 않고 이렇게 별도 조회로 격리한다 —
+ * 다른 화면·다른 사용자에게 새어나가는 경로를 원천적으로 없애기 위함.
+ */
+export async function getMyJbnuEmailStatus(userId: string): Promise<{ email: string; verifiedAt: string } | null> {
+  const [row] = await getDb()
+    .select({ jbnuEmail: users.jbnuEmail, jbnuEmailVerifiedAt: users.jbnuEmailVerifiedAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+
+  if (!row?.jbnuEmail || !row.jbnuEmailVerifiedAt) return null
+  return { email: row.jbnuEmail, verifiedAt: row.jbnuEmailVerifiedAt.toISOString() }
+}
+
 // ─────────────────────────────────────────────────────────────
 // 채팅 (PRD §5-2, §10-3①). 폴링 전용 — WebSocket/SSE 안 씀.
 // 자세한 규칙: .claude/skills/mukmate-chat-polling/SKILL.md

@@ -174,7 +174,8 @@ export default function SignupPage() {
           <div className="flex items-start gap-2.5 rounded-xl bg-primary-soft p-3.5">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-primary" />
             <p className="text-sm leading-relaxed text-foreground">
-              휴대전화·이메일 인증이 없어 비밀번호를 잊으면 계정을 복구할 수 없습니다.
+              비밀번호를 잊으면 계정을 복구할 수 없습니다. 다음 단계에서 인증하는 전북대
+              이메일은 학교 인증 용도로만 쓰이며 비밀번호 찾기에는 사용되지 않습니다.
             </p>
           </div>
         </div>
