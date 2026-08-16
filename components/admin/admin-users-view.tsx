@@ -10,7 +10,7 @@ import { EmptyState } from '@/components/empty-state'
 import { StoreAvatar } from '@/components/store-avatar'
 import { updateUserAccountStatus } from '@/lib/api'
 import { zoneLabel } from '@/lib/constants'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, isSameDay } from '@/lib/format'
 import type { AdminUserItem } from '@/lib/admin/data'
 import type { AccountStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -38,15 +38,20 @@ export function AdminUsersView({
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<AccountStatus | 'ALL'>('ALL')
+  const [todayOnly, setTodayOnly] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+
+  const nowIso = useMemo(() => new Date().toISOString(), [])
+  const todaySignupsCount = useMemo(() => users.filter((u) => isSameDay(u.createdAt, nowIso)).length, [users, nowIso])
 
   const visible = useMemo(() => {
     let list = users
     if (statusFilter !== 'ALL') list = list.filter((u) => u.accountStatus === statusFilter)
+    if (todayOnly) list = list.filter((u) => isSameDay(u.createdAt, nowIso))
     const q = query.trim().toLowerCase()
     if (q) list = list.filter((u) => u.loginId.toLowerCase().includes(q) || u.nickname.toLowerCase().includes(q))
     return list
-  }, [users, query, statusFilter])
+  }, [users, query, statusFilter, todayOnly, nowIso])
 
   async function handleChangeStatus(user: AdminUserItem, next: AccountStatus) {
     if (!confirm(`${user.nickname}(${user.loginId}) 님의 계정 상태를 "${STATUS_LABELS[next]}"(으)로 변경하시겠습니까?`)) return
@@ -90,6 +95,19 @@ export function AdminUsersView({
             {f.label}
           </button>
         ))}
+        <span className="mx-1 shrink-0 self-center text-border">|</span>
+        <button
+          type="button"
+          onClick={() => setTodayOnly((v) => !v)}
+          className={cn(
+            'h-8 shrink-0 rounded-full border px-3.5 text-sm font-semibold transition',
+            todayOnly
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-background text-muted-foreground',
+          )}
+        >
+          오늘 가입 ({todaySignupsCount})
+        </button>
       </div>
 
       {visible.length === 0 ? (
@@ -116,12 +134,20 @@ export function AdminUsersView({
                       관리자
                     </span>
                   )}
+                  {isSameDay(u.createdAt, nowIso) && (
+                    <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-primary/10 px-2 text-xs font-bold text-primary">
+                      오늘 가입
+                    </span>
+                  )}
                   <span className="truncate text-sm font-semibold text-foreground">
                     {u.nickname} <span className="font-normal text-muted-foreground">@{u.loginId}</span>
                   </span>
                 </div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {zoneLabel(u.zoneCode)} · 가입 {formatDateTime(u.createdAt)}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {u.lastLoginAt ? `최근 접속 ${formatDateTime(u.lastLoginAt)}` : '접속 이력 없음'}
                 </p>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
                   전북대 이메일:{' '}

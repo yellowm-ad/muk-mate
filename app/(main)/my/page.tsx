@@ -11,7 +11,7 @@ export default async function MyPage() {
 
   return (
     <MyPageView
-      me={{ nickname: me.nickname, zoneCode: me.zoneCode }}
+      me={{ nickname: me.nickname, zoneCode: me.zoneCode, role: me.role }}
       manner={manner}
       hostedPots={hostedPots}
       applications={applications}

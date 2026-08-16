@@ -43,6 +43,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (user.accountStatus === 'SUSPENDED') throw new AccountSuspendedError()
         if (user.accountStatus === 'DISABLED') throw new AccountDisabledError()
 
+        // 관리자 "오늘 접속한 회원 수" 집계용 — JWT 세션이라 이후 요청에선 authorize()가 다시 안 불림
+        await getDb().update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id))
+
         return {
           id: user.id,
           loginId: user.loginId,

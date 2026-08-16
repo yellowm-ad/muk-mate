@@ -1,12 +1,18 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { SessionProvider } from 'next-auth/react'
+import { ServiceWorkerRegister } from '@/components/sw-register'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: '먹메이트 · MukMate',
   description: '전북대 학생용 공동주문 매칭 서비스 — 북대에서 같이 먹자!',
   generator: 'v0.app',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: '먹메이트',
+  },
 }
 
 export const viewport: Viewport = {
@@ -32,6 +38,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <SessionProvider>{children}</SessionProvider>
+        <ServiceWorkerRegister />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

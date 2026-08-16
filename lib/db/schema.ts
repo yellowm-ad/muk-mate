@@ -71,6 +71,7 @@ export const users = pgTable(
     accountStatus: accountStatusEnum('account_status').notNull().default('ACTIVE'),
     role: userRoleEnum('role').notNull().default('USER'), // 관리자 권한 검증 전용 — 셀프서비스로 바꿀 수 없음(DB에서 직접 부여)
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }), // 로그인(Credentials authorize) 성공 시에만 갱신 — 페이지 방문마다 갱신되지 않음
     // 전북대 이메일 인증(신규, 2026-08-14 CLAUDE.md 참고) — 기존 계정은 NULL로 남고 신규 가입자만 채워진다.
     // 관리자 화면에서만 노출하고, 본인은 마이페이지 기본정보 수정에서만 확인 가능 — 다른 사용자에게는 절대 노출 금지.
     jbnuEmail: text('jbnu_email'),
