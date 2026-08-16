@@ -357,7 +357,8 @@ export default function OnboardingPage() {
             </p>
 
             <div className="mt-4 flex justify-center">
-              <MannerAvatar stage="NEW" color={avatarColor} accessory="NONE" className="size-24" />
+              {/* 가입 직후 실제 시작 단계(초기 50점 → 든든한 메이트)를 그대로 미리보기로 보여준다 */}
+              <MannerAvatar stage="STEADY" color={avatarColor} accessory="NONE" className="size-24" />
             </div>
 
             <div className="mt-4 grid grid-cols-4 gap-3">

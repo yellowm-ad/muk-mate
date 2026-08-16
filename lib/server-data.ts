@@ -1167,8 +1167,11 @@ export const MANNER_RATING_DELTA: Record<MannerRating, number> = { GOOD: 1.5, NE
 const MANNER_REVIEW_REVEAL_MS = 48 * 60 * 60 * 1000
 const MANNER_REVIEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
-export function computeMannerStage(score: number, reviewCount: number): MannerStage {
-  if (reviewCount < 3) return 'NEW'
+// v2.16: 초기 점수(50점)가 원래 "든든한 메이트" 구간인데, 평가 3개 미만이면 무조건
+// 'NEW'로 덮어써서 신규 유저가 실제보다 낮아 보였다 — 그 오버라이드를 없애고 항상
+// 점수 그대로 단계를 계산한다. 숫자 점수 공개 여부는 getMannerProfile의
+// reviewCount < 3 분기에서 별도로 처리하므로 여기서는 더 이상 reviewCount를 보지 않는다.
+export function computeMannerStage(score: number): MannerStage {
   if (score < 30) return 'STARVING'
   if (score < 50) return 'PECKISH'
   if (score < 70) return 'STEADY'
@@ -1270,7 +1273,7 @@ export async function getMannerProfile(userId: string): Promise<MannerProfile> {
 
   const reviewCount = row?.reviewCount ?? 0
   const scoreNum = row ? Number(row.score) : 50
-  const stage = computeMannerStage(scoreNum, reviewCount)
+  const stage = computeMannerStage(scoreNum)
   const topTags = reviewCount < 3 ? [] : await getTopPositiveTags(userId)
 
   return {
@@ -1307,13 +1310,14 @@ export async function getMannerAvatarsForUsers(userIds: string[]): Promise<Map<s
 
   for (const row of rows) {
     map.set(row.userId, {
-      stage: computeMannerStage(Number(row.score), row.reviewCount),
+      stage: computeMannerStage(Number(row.score)),
       avatarColor: row.avatarColor as MannerAvatarColor,
       avatarAccessory: row.avatarAccessory as MannerAvatarAccessory,
     })
   }
   for (const id of uniqueIds) {
-    if (!map.has(id)) map.set(id, { stage: 'NEW', avatarColor: 'NAVY', avatarAccessory: 'NONE' })
+    // manner_profiles 행이 아예 없는 경우(이전 가입 등) — DB 기본값(50점)과 동일하게 계산
+    if (!map.has(id)) map.set(id, { stage: computeMannerStage(50), avatarColor: 'NAVY', avatarAccessory: 'NONE' })
   }
   return map
 }
